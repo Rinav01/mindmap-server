@@ -4,9 +4,12 @@ const controller = require("../controllers/mindmapController");
 
 router.get("/", controller.getMaps);
 router.post("/", controller.createMap);
+router.get("/trash", controller.getTrash);           // ← before /:id
 router.get("/:id", controller.getMap);
 router.patch("/:id/star", controller.toggleStar);
 router.patch("/:id/title", controller.updateMapTitle);
+router.patch("/:id/restore", controller.restoreMap);
+router.delete("/:id/permanent", controller.permanentlyDeleteMap);
 router.delete("/:id", controller.deleteMap);
 router.get("/:id/nodes", controller.getNodes);
 router.post("/nodes", controller.createNode);

@@ -4,9 +4,24 @@ const Node = require("../models/Node");
 // GET ALL
 exports.getMaps = async (req, res) => {
   try {
-    const maps = await MindMap.find({ deletedAt: null }).sort({
-      updatedAt: -1,
-    });
+    const maps = await MindMap.aggregate([
+      { $match: { deletedAt: null } },
+      {
+        $lookup: {
+          from: "nodes",
+          localField: "_id",
+          foreignField: "mindMapId",
+          as: "nodes",
+        },
+      },
+      {
+        $addFields: {
+          nodeCount: { $size: "$nodes" },
+        },
+      },
+      { $project: { nodes: 0 } }, // remove the full nodes array
+      { $sort: { updatedAt: -1 } },
+    ]);
 
     res.json(maps);
   } catch (err) {
@@ -80,11 +95,57 @@ exports.toggleStar = async (req, res) => {
 exports.deleteMap = async (req, res) => {
   try {
     const map = await MindMap.findById(req.params.id);
-
     map.deletedAt = new Date();
     await map.save();
-
     res.json({ message: "Deleted" });
+  } catch (err) {
+    res.status(500).json({ error: "Server error" });
+  }
+};
+
+// GET TRASH (soft-deleted maps)
+exports.getTrash = async (req, res) => {
+  try {
+    const maps = await MindMap.aggregate([
+      { $match: { deletedAt: { $ne: null } } },
+      {
+        $lookup: {
+          from: "nodes",
+          localField: "_id",
+          foreignField: "mindMapId",
+          as: "nodes",
+        },
+      },
+      { $addFields: { nodeCount: { $size: "$nodes" } } },
+      { $project: { nodes: 0 } },
+      { $sort: { deletedAt: -1 } },
+    ]);
+    res.json(maps);
+  } catch (err) {
+    res.status(500).json({ error: "Server error" });
+  }
+};
+
+// RESTORE FROM TRASH
+exports.restoreMap = async (req, res) => {
+  try {
+    const map = await MindMap.findById(req.params.id);
+    if (!map) return res.status(404).json({ error: "Map not found" });
+    map.deletedAt = null;
+    await map.save();
+    res.json(map);
+  } catch (err) {
+    res.status(500).json({ error: "Server error" });
+  }
+};
+
+// PERMANENTLY DELETE
+exports.permanentlyDeleteMap = async (req, res) => {
+  try {
+    const map = await MindMap.findByIdAndDelete(req.params.id);
+    if (!map) return res.status(404).json({ error: "Map not found" });
+    await Node.deleteMany({ mindMapId: req.params.id });
+    res.json({ message: "Permanently deleted" });
   } catch (err) {
     res.status(500).json({ error: "Server error" });
   }

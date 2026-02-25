@@ -59,25 +59,11 @@ exports.restoreVersion = async (req, res) => {
         // Delete existing nodes
         await Node.deleteMany({ mindMapId });
 
-        // Map old IDs to new IDs to preserve relationships
-        const idMap = new Map();
-        version.snapshot.forEach((node) => {
-            idMap.set(String(node._id), new (require("mongoose")).Types.ObjectId());
-        });
-
-        // Insert snapshot nodes with updated IDs
-        const restoredNodes = version.snapshot.map((node) => {
-            const newNodeId = idMap.get(String(node._id));
-            const oldParentId = node.parentId ? String(node.parentId) : null;
-            const newParentId = oldParentId ? idMap.get(oldParentId) : null;
-
-            return {
-                ...node,
-                _id: newNodeId,
-                parentId: newParentId || oldParentId, // Fallback if parent not in map (e.g. external root)
-                mindMapId,
-            };
-        });
+        // Insert snapshot nodes with original IDs preserved
+        const restoredNodes = version.snapshot.map((node) => ({
+            ...node,
+            mindMapId, // Ensure it's correctly linked to the current map
+        }));
 
         await Node.insertMany(restoredNodes);
 
@@ -85,5 +71,22 @@ exports.restoreVersion = async (req, res) => {
     } catch (err) {
         console.error("Restore version error:", err);
         res.status(500).json({ message: "Failed to restore version" });
+    }
+};
+
+/**
+ * Delete a version
+ */
+exports.deleteVersion = async (req, res) => {
+    try {
+        const { versionId } = req.params;
+        const deleted = await Version.findByIdAndDelete(versionId);
+        if (!deleted) {
+            return res.status(404).json({ message: "Version not found" });
+        }
+        res.json({ message: "Version deleted" });
+    } catch (err) {
+        console.error("Delete version error:", err);
+        res.status(500).json({ message: "Failed to delete version" });
     }
 };
