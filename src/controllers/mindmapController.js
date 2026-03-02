@@ -5,7 +5,7 @@ const Node = require("../models/Node");
 exports.getMaps = async (req, res) => {
   try {
     const maps = await MindMap.aggregate([
-      { $match: { deletedAt: null } },
+      { $match: { deletedAt: null, $or: [{ userId: req.user._id }, { collaborators: req.user._id }] } },
       {
         $lookup: {
           from: "nodes",
@@ -32,7 +32,7 @@ exports.getMaps = async (req, res) => {
 // GET SINGLE MAP
 exports.getMap = async (req, res) => {
   try {
-    const map = await MindMap.findById(req.params.id);
+    const map = await MindMap.findOne({ _id: req.params.id, $or: [{ userId: req.user._id }, { collaborators: req.user._id }] });
     if (!map) return res.status(404).json({ error: "Map not found" });
     res.json(map);
   } catch (err) {
@@ -45,6 +45,7 @@ exports.createMap = async (req, res) => {
   try {
     const map = await MindMap.create({
       title: req.body.title || "Untitled Map",
+      userId: req.user._id,
     });
 
     // Create root node
@@ -65,8 +66,8 @@ exports.createMap = async (req, res) => {
 // UPDATE MAP TITLE
 exports.updateMapTitle = async (req, res) => {
   try {
-    const map = await MindMap.findByIdAndUpdate(
-      req.params.id,
+    const map = await MindMap.findOneAndUpdate(
+      { _id: req.params.id, userId: req.user._id },
       { title: req.body.title },
       { returnDocument: 'after' }
     );
@@ -80,7 +81,8 @@ exports.updateMapTitle = async (req, res) => {
 // TOGGLE STAR
 exports.toggleStar = async (req, res) => {
   try {
-    const map = await MindMap.findById(req.params.id);
+    const map = await MindMap.findOne({ _id: req.params.id, $or: [{ userId: req.user._id }, { collaborators: req.user._id }] });
+    if (!map) return res.status(404).json({ error: "Map not found" });
 
     map.isStarred = !map.isStarred;
     await map.save();
@@ -94,7 +96,8 @@ exports.toggleStar = async (req, res) => {
 // SOFT DELETE
 exports.deleteMap = async (req, res) => {
   try {
-    const map = await MindMap.findById(req.params.id);
+    const map = await MindMap.findOne({ _id: req.params.id, userId: req.user._id });
+    if (!map) return res.status(404).json({ error: "Map not found" });
     map.deletedAt = new Date();
     await map.save();
     res.json({ message: "Deleted" });
@@ -107,7 +110,7 @@ exports.deleteMap = async (req, res) => {
 exports.getTrash = async (req, res) => {
   try {
     const maps = await MindMap.aggregate([
-      { $match: { deletedAt: { $ne: null } } },
+      { $match: { deletedAt: { $ne: null }, userId: req.user._id } },
       {
         $lookup: {
           from: "nodes",
@@ -129,7 +132,7 @@ exports.getTrash = async (req, res) => {
 // RESTORE FROM TRASH
 exports.restoreMap = async (req, res) => {
   try {
-    const map = await MindMap.findById(req.params.id);
+    const map = await MindMap.findOne({ _id: req.params.id, userId: req.user._id });
     if (!map) return res.status(404).json({ error: "Map not found" });
     map.deletedAt = null;
     await map.save();
@@ -142,7 +145,7 @@ exports.restoreMap = async (req, res) => {
 // PERMANENTLY DELETE
 exports.permanentlyDeleteMap = async (req, res) => {
   try {
-    const map = await MindMap.findByIdAndDelete(req.params.id);
+    const map = await MindMap.findOneAndDelete({ _id: req.params.id, userId: req.user._id });
     if (!map) return res.status(404).json({ error: "Map not found" });
     await Node.deleteMany({ mindMapId: req.params.id });
     res.json({ message: "Permanently deleted" });
@@ -151,8 +154,47 @@ exports.permanentlyDeleteMap = async (req, res) => {
   }
 };
 
+// SHARE MAP
+exports.shareMap = async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ error: "Email is required" });
+
+    const User = require("../models/User");
+    const userToInvite = await User.findOne({ email });
+    if (!userToInvite) return res.status(404).json({ error: "User with this email not found" });
+
+    // Ensure only the map owner can share it (or a collaborator, but usually owner)
+    // Let's restrict sharing to the owner for now
+    const map = await MindMap.findOne({ _id: req.params.id, userId: req.user._id });
+    if (!map) return res.status(404).json({ error: "Map not found or you don't have permission to share it" });
+
+    // Check if the user is already a collaborator or the owner
+    if (map.userId.toString() === userToInvite._id.toString()) {
+      return res.status(400).json({ error: "User is already the owner of this map" });
+    }
+
+    if (!map.collaborators) map.collaborators = [];
+    if (map.collaborators.includes(userToInvite._id)) {
+      return res.status(400).json({ error: "User is already a collaborator" });
+    }
+
+    map.collaborators.push(userToInvite._id);
+    await map.save();
+
+    res.json({ message: "Collaborator added successfully", map });
+  } catch (err) {
+    console.error("Error sharing map:", err);
+    res.status(500).json({ error: "Server error" });
+  }
+};
+
 // GET NODES
 exports.getNodes = async (req, res) => {
+  // Check ownership
+  const map = await MindMap.findOne({ _id: req.params.id, $or: [{ userId: req.user._id }, { collaborators: req.user._id }] });
+  if (!map) return res.status(404).json({ error: "Map not found" });
+
   const nodes = await Node.find({
     mindMapId: req.params.id,
   });
@@ -164,6 +206,10 @@ exports.getNodes = async (req, res) => {
 exports.createNode = async (req, res) => {
   try {
     const { mindMapId, parentId, x, y } = req.body;
+
+    // Check ownership
+    const map = await MindMap.findOne({ _id: mindMapId, $or: [{ userId: req.user._id }, { collaborators: req.user._id }] });
+    if (!map) return res.status(404).json({ error: "Map not found" });
 
     const node = await Node.create({
       mindMapId,
@@ -192,6 +238,17 @@ exports.updateNode = async (req, res) => {
       }
     }
 
+    // Ensure node belongs to a map owned by the user
+    const nodeToCheck = await Node.findById(req.params.id).populate('mindMapId');
+    if (!nodeToCheck || !nodeToCheck.mindMapId) {
+      return res.status(404).json({ error: "Node not found" });
+    }
+    const isOwner = nodeToCheck.mindMapId.userId.toString() === req.user._id.toString();
+    const isCollaborator = nodeToCheck.mindMapId.collaborators.some(id => id.toString() === req.user._id.toString());
+    if (!isOwner && !isCollaborator) {
+      return res.status(404).json({ error: "Node not found" });
+    }
+
     const node = await Node.findByIdAndUpdate(
       req.params.id,
       updates,
@@ -215,6 +272,17 @@ exports.updateNodeText = async (req, res) => {
   try {
     const { text } = req.body;
 
+    // Ensure node belongs to a map owned by the user
+    const nodeToCheck = await Node.findById(req.params.id).populate('mindMapId');
+    if (!nodeToCheck || !nodeToCheck.mindMapId) {
+      return res.status(404).json({ error: "Node not found" });
+    }
+    const isOwner = nodeToCheck.mindMapId.userId.toString() === req.user._id.toString();
+    const isCollaborator = nodeToCheck.mindMapId.collaborators.some(id => id.toString() === req.user._id.toString());
+    if (!isOwner && !isCollaborator) {
+      return res.status(404).json({ error: "Node not found" });
+    }
+
     const node = await Node.findByIdAndUpdate(
       req.params.id,
       { text },
@@ -235,6 +303,17 @@ exports.updateNodeText = async (req, res) => {
 // DELETE NODE
 exports.deleteNode = async (req, res) => {
   try {
+    // Ensure node belongs to a map owned by the user
+    const nodeToCheck = await Node.findById(req.params.id).populate('mindMapId');
+    if (!nodeToCheck || !nodeToCheck.mindMapId) {
+      return res.status(404).json({ error: "Node not found" });
+    }
+    const isOwner = nodeToCheck.mindMapId.userId.toString() === req.user._id.toString();
+    const isCollaborator = nodeToCheck.mindMapId.collaborators.some(id => id.toString() === req.user._id.toString());
+    if (!isOwner && !isCollaborator) {
+      return res.status(404).json({ error: "Node not found" });
+    }
+
     const node = await Node.findByIdAndDelete(req.params.id);
 
     if (!node) {

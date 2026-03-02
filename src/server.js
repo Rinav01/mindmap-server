@@ -20,8 +20,11 @@ const io = new Server(server, {
 app.use(cors());
 app.use(express.json());
 
-app.use("/api/mindmaps", require("./routes/mindmapRoutes"));
-app.use("/api", require("./routes/versionRoutes"));
+const { protect } = require("./middleware/authMiddleware");
+
+app.use("/api/auth", require("./routes/authRoutes"));
+app.use("/api/mindmaps", protect, require("./routes/mindmapRoutes"));
+app.use("/api", protect, require("./routes/versionRoutes"));
 
 // Initialize sockets
 initSocket(io);

@@ -5,12 +5,15 @@ const initSocket = (io) => {
     // Join a specific mind map room
     socket.on("join-map", (mapId) => {
       socket.join(mapId);
+      socket.mapId = mapId; // Store the current map ID on the socket
       console.log(`Socket ${socket.id} joined map ${mapId}`);
     });
 
     // Leave a specific mind map room
     socket.on("leave-map", (mapId) => {
       socket.leave(mapId);
+      if (socket.mapId === mapId) socket.mapId = null;
+      socket.to(mapId).emit("user-disconnected", socket.id);
       console.log(`Socket ${socket.id} left map ${mapId}`);
     });
 
@@ -35,13 +38,16 @@ const initSocket = (io) => {
     // --- PRESENCE (Bonus features) ---
     // Broadcast user's cursor position or selected node
     socket.on("cursor-moved", ({ mapId, cursor }) => {
-       // cursor object could have { id: socket.id, x, y, name, color }
-      socket.to(mapId).emit("cursor-moved", cursor);
+      // cursor object could have { id: socket.id, x, y, name, color }
+      socket.to(mapId).emit("cursor-moved", { ...cursor, id: socket.id });
     });
 
     socket.on("disconnect", () => {
       console.log("User disconnected:", socket.id);
-      // Optional: Broadcast disconnect to all rooms this user is in to remove their cursor
+      // Broadcast disconnect to all rooms this user is in to remove their cursor
+      if (socket.mapId) {
+        socket.to(socket.mapId).emit("user-disconnected", socket.id);
+      }
     });
   });
 };
