@@ -38,7 +38,25 @@ const loginUser = async (req, res) => {
     }
 };
 
+const getMe = async (req, res) => {
+    // req.user is already set by the protect middleware
+    const user = req.user;
+    if (!user) {
+        return res.status(401).json({ message: "Not authorized" });
+    }
+    res.status(200).json({
+        _id: user._id,
+        username: user.username,
+        email: user.email,
+        name: user.name || user.username,
+        color: user.color || "#3b82f6",
+        createdAt: user.createdAt,
+        updatedAt: user.updatedAt,
+    });
+};
+
 module.exports = {
     registerUser,
     loginUser,
+    getMe,
 };

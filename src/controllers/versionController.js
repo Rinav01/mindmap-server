@@ -10,8 +10,8 @@ exports.createVersion = async (req, res) => {
         const { id: mindMapId } = req.params;
         const { label = "", actionType = "manual" } = req.body;
 
-        // Verify map ownership
-        const map = await MindMap.findOne({ _id: mindMapId, userId: req.user._id });
+        // Verify map ownership or collaborator access
+        const map = await MindMap.findOne({ _id: mindMapId, $or: [{ userId: req.user._id }, { collaborators: req.user._id }] });
         if (!map) return res.status(404).json({ message: "Map not found" });
 
         const nodes = await Node.find({ mindMapId }).lean();
@@ -21,7 +21,11 @@ exports.createVersion = async (req, res) => {
             snapshot: nodes,
             label,
             actionType,
+            createdBy: req.user._id,
         });
+
+        // Populate createdBy immediately so the fresh response has the author data
+        await version.populate("createdBy", "username name color");
 
         res.status(201).json(version);
     } catch (err) {
@@ -37,13 +41,14 @@ exports.getVersions = async (req, res) => {
     try {
         const { id: mindMapId } = req.params;
 
-        // Verify map ownership
-        const map = await MindMap.findOne({ _id: mindMapId, userId: req.user._id });
+        // Verify map ownership or collaborator access
+        const map = await MindMap.findOne({ _id: mindMapId, $or: [{ userId: req.user._id }, { collaborators: req.user._id }] });
         if (!map) return res.status(404).json({ message: "Map not found" });
 
         const versions = await Version.find({ mindMapId })
             .sort({ createdAt: -1 })
-            .select("-snapshot"); // don't send full snapshot in list
+            .select("-snapshot") // don't send full snapshot in list
+            .populate("createdBy", "username name color");
 
         res.json(versions);
     } catch (err) {
@@ -59,8 +64,8 @@ exports.restoreVersion = async (req, res) => {
     try {
         const { id: mindMapId, versionId } = req.params;
 
-        // Verify map ownership
-        const map = await MindMap.findOne({ _id: mindMapId, userId: req.user._id });
+        // Verify map ownership or collaborator access
+        const map = await MindMap.findOne({ _id: mindMapId, $or: [{ userId: req.user._id }, { collaborators: req.user._id }] });
         if (!map) return res.status(404).json({ message: "Map not found" });
 
         const version = await Version.findById(versionId);
@@ -94,8 +99,8 @@ exports.deleteVersion = async (req, res) => {
     try {
         const { id: mindMapId, versionId } = req.params;
 
-        // Verify map ownership
-        const map = await MindMap.findOne({ _id: mindMapId, userId: req.user._id });
+        // Verify map ownership or collaborator access
+        const map = await MindMap.findOne({ _id: mindMapId, $or: [{ userId: req.user._id }, { collaborators: req.user._id }] });
         if (!map) return res.status(404).json({ message: "Map not found" });
 
         const deleted = await Version.findByIdAndDelete(versionId);

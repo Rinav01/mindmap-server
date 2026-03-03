@@ -45,12 +45,14 @@ class AuthService {
         });
 
         return {
-            _id: user.id,
-            username: user.username,
-            name: user.username, // Using username as name for cursor
-            email: user.email,
-            color: user.color,
             token: this.generateToken(user._id),
+            user: {
+                _id: user.id,
+                username: user.username,
+                name: user.username,
+                email: user.email,
+                color: user.color,
+            },
         };
     }
 
@@ -67,12 +69,14 @@ class AuthService {
         }
 
         return {
-            _id: user.id,
-            username: user.username,
-            name: user.username, // Using username as name for cursor
-            email: user.email,
-            color: user.color,
             token: this.generateToken(user._id),
+            user: {
+                _id: user.id,
+                username: user.username,
+                name: user.username,
+                email: user.email,
+                color: user.color,
+            },
         };
     }
 }

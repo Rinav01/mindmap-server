@@ -1,19 +1,44 @@
+// Room presence: mapId -> Map<socketId, { name, color }>
+const rooms = new Map();
+
 const initSocket = (io) => {
   io.on("connection", (socket) => {
     console.log("New user connected:", socket.id);
 
     // Join a specific mind map room
-    socket.on("join-map", (mapId) => {
+    socket.on("join-map", ({ mapId, user }) => {
       socket.join(mapId);
-      socket.mapId = mapId; // Store the current map ID on the socket
-      console.log(`Socket ${socket.id} joined map ${mapId}`);
+      socket.mapId = mapId;
+      socket.userInfo = user || { name: "Anonymous", color: "#3b82f6" };
+
+      // Initialize room if needed
+      if (!rooms.has(mapId)) rooms.set(mapId, new Map());
+      const room = rooms.get(mapId);
+      room.set(socket.id, socket.userInfo);
+
+      console.log(`Socket ${socket.id} (${socket.userInfo.name}) joined map ${mapId}`);
+
+      // Send the full user list to the joining user
+      const userList = {};
+      room.forEach((info, sid) => { userList[sid] = info; });
+      socket.emit("user-list", userList);
+
+      // Broadcast to others that a new user joined
+      socket.to(mapId).emit("user-joined", { id: socket.id, ...socket.userInfo });
     });
 
     // Leave a specific mind map room
     socket.on("leave-map", (mapId) => {
       socket.leave(mapId);
-      if (socket.mapId === mapId) socket.mapId = null;
+
+      // Remove from room presence
+      if (rooms.has(mapId)) {
+        rooms.get(mapId).delete(socket.id);
+        if (rooms.get(mapId).size === 0) rooms.delete(mapId);
+      }
+
       socket.to(mapId).emit("user-disconnected", socket.id);
+      if (socket.mapId === mapId) socket.mapId = null;
       console.log(`Socket ${socket.id} left map ${mapId}`);
     });
 
@@ -30,23 +55,43 @@ const initSocket = (io) => {
       socket.to(mapId).emit("node-deleted", nodeId);
     });
 
-    // Real-time drag updates (for smoother UX before saving to DB)
     socket.on("node-dragged", ({ mapId, nodeId, position }) => {
       socket.to(mapId).emit("node-dragged", { nodeId, position });
     });
 
-    // --- PRESENCE (Bonus features) ---
-    // Broadcast user's cursor position or selected node
+    // --- EDITING AWARENESS ---
+    socket.on("node-editing", ({ mapId, nodeId, user }) => {
+      socket.to(mapId).emit("node-editing", { nodeId, user });
+    });
+
+    socket.on("node-editing-stopped", ({ mapId, nodeId }) => {
+      socket.to(mapId).emit("node-editing-stopped", { nodeId });
+    });
+
+    // --- SNAPSHOTS (VERSIONS) ---
+    socket.on("map-versions-changed", (mapId) => {
+      socket.to(mapId).emit("map-versions-changed");
+    });
+
+    socket.on("map-restored", ({ mapId, nodes, versionId }) => {
+      socket.to(mapId).emit("map-restored", { nodes, versionId });
+    });
+
+    // --- PRESENCE ---
     socket.on("cursor-moved", ({ mapId, cursor }) => {
-      // cursor object could have { id: socket.id, x, y, name, color }
       socket.to(mapId).emit("cursor-moved", { ...cursor, id: socket.id });
     });
 
     socket.on("disconnect", () => {
       console.log("User disconnected:", socket.id);
-      // Broadcast disconnect to all rooms this user is in to remove their cursor
       if (socket.mapId) {
         socket.to(socket.mapId).emit("user-disconnected", socket.id);
+
+        // Remove from room presence
+        if (rooms.has(socket.mapId)) {
+          rooms.get(socket.mapId).delete(socket.id);
+          if (rooms.get(socket.mapId).size === 0) rooms.delete(socket.mapId);
+        }
       }
     });
   });
