@@ -17,6 +17,7 @@ const io = new Server(server, {
   },
 });
 
+app.set("io", io);
 app.use(cors());
 app.use(express.json());
 

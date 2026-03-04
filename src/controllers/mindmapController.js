@@ -1,5 +1,6 @@
 const MindMap = require("../models/MindMap");
 const Node = require("../models/Node");
+const ActivityLog = require("../models/ActivityLog");
 
 // GET ALL
 exports.getMaps = async (req, res) => {
@@ -219,6 +220,19 @@ exports.createNode = async (req, res) => {
       y,
     });
 
+    const populatedUser = await require("../models/User").findById(req.user._id).select("username color");
+    const log = await ActivityLog.create({
+      mindMapId,
+      userId: req.user._id,
+      action: "NODE_CREATED",
+      nodeId: node._id,
+      metadata: { text: "New Node" },
+    });
+
+    // Broadcast activity log
+    const logPayload = { ...log.toObject(), userId: populatedUser };
+    req.app.get("io").to(mindMapId.toString()).emit("activity-log-added", logPayload);
+
     res.status(201).json(node);
   } catch (err) {
     console.error("Error creating node:", err);
@@ -226,11 +240,11 @@ exports.createNode = async (req, res) => {
   }
 };
 
-// UPDATE NODE (position, text, color, fontSize)
+// UPDATE NODE (position, text, notes, color, fontSize)
 exports.updateNode = async (req, res) => {
   try {
     // Whitelist allowed fields to prevent arbitrary overwrites
-    const allowed = ["x", "y", "text", "color", "fontSize"];
+    const allowed = ["x", "y", "text", "notes", "color", "fontSize"];
     const updates = {};
     for (const key of allowed) {
       if (req.body[key] !== undefined) {
@@ -249,6 +263,8 @@ exports.updateNode = async (req, res) => {
       return res.status(404).json({ error: "Node not found" });
     }
 
+    const oldNode = await Node.findById(req.params.id);
+
     const node = await Node.findByIdAndUpdate(
       req.params.id,
       updates,
@@ -258,6 +274,29 @@ exports.updateNode = async (req, res) => {
     if (!node) {
       return res.status(404).json({ error: "Node not found" });
     }
+
+    const populatedUser = await require("../models/User").findById(req.user._id).select("username color");
+
+    let action = "NODE_EDITED";
+    let metadata = {};
+    if (updates.x !== undefined || updates.y !== undefined) action = "NODE_MOVED";
+    if (updates.color !== undefined) {
+      action = "NODE_COLOR_CHANGED";
+      metadata = { oldColor: oldNode.color, newColor: node.color };
+    }
+    if (updates.text !== undefined || updates.notes !== undefined) action = "NODE_EDITED";
+
+    const log = await ActivityLog.create({
+      mindMapId: node.mindMapId,
+      userId: req.user._id,
+      action,
+      nodeId: node._id,
+      metadata,
+    });
+
+    // Broadcast activity log
+    const logPayload = { ...log.toObject(), userId: populatedUser };
+    req.app.get("io").to(node.mindMapId.toString()).emit("activity-log-added", logPayload);
 
     res.json(node);
   } catch (err) {
@@ -293,6 +332,18 @@ exports.updateNodeText = async (req, res) => {
       return res.status(404).json({ error: "Node not found" });
     }
 
+    const populatedUser = await require("../models/User").findById(req.user._id).select("username color");
+    const log = await ActivityLog.create({
+      mindMapId: node.mindMapId,
+      userId: req.user._id,
+      action: "NODE_EDITED",
+      nodeId: node._id,
+      metadata: { text },
+    });
+
+    const logPayload = { ...log.toObject(), userId: populatedUser };
+    req.app.get("io").to(node.mindMapId.toString()).emit("activity-log-added", logPayload);
+
     res.json(node);
   } catch (err) {
     console.error("Error updating node text:", err);
@@ -323,6 +374,18 @@ exports.deleteNode = async (req, res) => {
     // Also delete all children recursively
     await deleteNodeChildren(node._id);
 
+    const populatedUser = await require("../models/User").findById(req.user._id).select("username color");
+    const log = await ActivityLog.create({
+      mindMapId: node.mindMapId,
+      userId: req.user._id,
+      action: "NODE_DELETED",
+      nodeId: node._id,
+      metadata: { text: node.text },
+    });
+
+    const logPayload = { ...log.toObject(), userId: populatedUser };
+    req.app.get("io").to(node.mindMapId.toString()).emit("activity-log-added", logPayload);
+
     res.json({ message: "Node deleted" });
   } catch (err) {
     console.error("Error deleting node:", err);
@@ -338,3 +401,20 @@ async function deleteNodeChildren(parentId) {
   }
 }
 
+// GET ACTIVITY LOGS
+exports.getActivityLogs = async (req, res) => {
+  try {
+    const map = await MindMap.findOne({ _id: req.params.id, $or: [{ userId: req.user._id }, { collaborators: req.user._id }] });
+    if (!map) return res.status(404).json({ error: "Map not found" });
+
+    const logs = await ActivityLog.find({ mindMapId: req.params.id })
+      .populate("userId", "username color")
+      .sort({ createdAt: -1 })
+      .limit(50);
+
+    res.json(logs);
+  } catch (err) {
+    console.error("Error fetching activity logs:", err);
+    res.status(500).json({ error: "Server error" });
+  }
+};

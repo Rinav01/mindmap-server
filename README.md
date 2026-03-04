@@ -2,193 +2,179 @@
 
 A high-performance Node.js/Express backend designed for real-time collaborative mind mapping. This server handles complex tree structures, recursive operations, state-based versioning, user authentication, and multi-user synchronization using Socket.io.
 
----
-
-## 🚀 Core Capabilities
+## 🚀 Features
 
 ### 🌲 Hierarchical Node Management
-- **Tree Persistence**: Stores nodes with `parentId` references, allowing for infinite nesting levels.
-- **Recursive Integrity**: When a node is deleted, the server recursively identifies and removes all descendant nodes to prevent orphaned data.
-- **Spatial Data**: Stores `x` and `y` coordinates for canvas-based rendering and real-time drag-and-drop.
+- **Infinite Nesting**: Stores nodes with `parentId` references, allowing for deep hierarchy.
+- **Recursive Integrity**: Automatically handles cascading deletions to prevent orphaned nodes.
+- **Spatial Positioning**: Manages `x` and `y` coordinates for canvas-based rendering.
+- **Rich Properties**: Supports custom colors, font sizes, and text content for each node.
 
 ### 👥 Real-Time Collaboration
-- **Socket.io Integration**: Live updates across multiple clients for a seamless collaborative experience.
-- **Presence Tracking**: Real-time cursor positions and user presence indicators.
-- **Instant Synchronization**: Node additions, text updates, property changes, and dragging are broadcasted instantly to all connected peers in the same mind map room.
-- **Map Sharing**: Invite other registered users to collaborate on your mind maps via email.
+- **Live Synchronization**: Instant updates for node creation, modification, movement, and deletion across all connected clients.
+- **Presence Awareness**: See who is online, their cursor positions, and what they are selecting or editing in real-time.
+- **Multi-User Editing**: Locks nodes while they are being edited to prevent conflicts.
 
-### 🕒 Advanced Versioning System (Snapshots)
-- **State Snapshots**: Captures the entire state of a mind map (all nodes) into a single version document.
-- **Relational Restoration**: During restoration, the server performs an "ID Mapping" operation. It maintains the correct `parentId` relationships while ensuring the restored tree is structurally identical to the captured state.
-- **Action Tracking**: Categorizes versions by action (e.g., `manual`, `auto-layout`, `restore`).
+### 🕒 Version Control & Snapshots
+- **State Snapshots**: Capture the complete state of a mind map at any point in time.
+- **One-Click Restore**: Revert a mind map to any previous version instantly.
+- **Activity Logging**: Tracks changes and restorations for audit purposes.
 
-### 📂 Organization & Trash
-- **Soft Deletion**: Mind maps are flagged with `deletedAt` for a "Trash" system, allowing users to recover accidentally deleted maps.
-- **Starring System**: Priority flagging for easy access to important maps.
-- **Permanent Deletion**: Option to completely remove mind maps and all associated nodes from the database.
-
-### 🔐 Secure Authentication
-- **JWT-Based Auth**: Secure access to resources using JSON Web Tokens.
-- **User Profiles**: Each user gets a unique profile with a system-assigned random color for their cursor in collaborative sessions.
+### 📂 Organization & Security
+- **Soft Deletion & Trash**: Recover accidentally deleted maps from the trash bin.
+- **Starring**: Mark important maps for quick access.
+- **Sharing**: Invite collaborators via email to work on maps together.
+- **Secure Auth**: JWT-based authentication with password hashing.
 
 ---
 
 ## 🛠️ Technical Stack
 
-- **Backend**: Node.js with Express 5.x.
-- **Database**: MongoDB with Mongoose 9.x.
-- **Real-Time**: Socket.io 4.x.
-- **Security**: JWT for authentication, BcryptJS for password hashing.
-- **Architecture**: Controller-Service-Repository pattern for better maintainability and testability.
+- **Runtime**: [Node.js](https://nodejs.org/)
+- **Framework**: [Express.js](https://expressjs.com/) (v5.x)
+- **Database**: [MongoDB](https://www.mongodb.com/) with [Mongoose](https://mongoosejs.com/) (v9.x)
+- **Real-Time Engine**: [Socket.io](https://socket.io/) (v4.x)
+- **Authentication**: JSON Web Tokens (JWT) & BcryptJS
+- **Architecture**: Controller-Service-Repository (CSR) pattern
 
 ---
 
-## 📦 Database Schemas
+## ⚙️ Prerequisites
 
-### User
-| Field | Type | Description |
-| :--- | :--- | :--- |
-| `username` | String | Unique username for the user. |
-| `email` | String | Unique email address. |
-| `password` | String | Hashed password. |
-| `color` | String | Hex color assigned for collaboration cursors. |
+Before running the server, ensure you have the following installed:
+- **Node.js** (v18 or higher)
+- **npm** (v9 or higher)
+- **MongoDB** (Local instance or Atlas connection string)
 
-### MindMap
-| Field | Type | Description |
-| :--- | :--- | :--- |
-| `title` | String | The display name of the map. |
-| `userId` | ObjectId | Reference to the owner (User). |
-| `collaborators` | [ObjectId] | Array of User references who can access the map. |
-| `isStarred` | Boolean | Priority flag (default: false). |
-| `deletedAt` | Date | Timestamp for soft-deletion (null if active). |
+---
 
-### Node
-| Field | Type | Description |
-| :--- | :--- | :--- |
-| `mindMapId` | ObjectId | Reference to the parent MindMap. |
-| `parentId` | ObjectId | Reference to the parent Node (null for root). |
-| `text` | String | Label content of the node. |
-| `x, y` | Number | Coordinates for visual placement. |
-| `color` | String | Optional hex or CSS color code. |
-| `fontSize` | Number | Optional font size in pixels. |
+## 📥 Installation & Setup
+
+1.  **Clone the repository**
+    ```bash
+    git clone <repository-url>
+    cd mindmap-server
+    ```
+
+2.  **Install dependencies**
+    ```bash
+    npm install
+    ```
+
+3.  **Environment Configuration**
+    Create a `.env` file in the root directory and add the following variables:
+    ```env
+    PORT=5000
+    MONGO_URI=mongodb://localhost:27017/mindmap
+    JWT_SECRET=your_super_secure_jwt_secret_key
+    ```
+
+4.  **Start the Server**
+    ```bash
+    # Development mode (with hot-reload via nodemon)
+    npm run dev
+
+    # Production mode
+    npm start
+    ```
 
 ---
 
 ## 🔌 API Reference
 
-### 1. Authentication (`/api/auth`)
+### Authentication
+| Method | Endpoint | Description | Auth Required |
+| :--- | :--- | :--- | :---: |
+| `POST` | `/api/auth/register` | Register a new user account | ❌ |
+| `POST` | `/api/auth/login` | Login and receive a JWT token | ❌ |
+| `GET` | `/api/auth/me` | Get current user profile details | ✅ |
+
+### Mind Maps
 | Method | Endpoint | Description |
 | :--- | :--- | :--- |
-| `POST` | `/register` | Register a new user. |
-| `POST` | `/login` | Login and receive a JWT. |
-| `GET` | `/me` | Get current user's profile (Requires Auth). |
+| `GET` | `/api/mindmaps` | Get all maps (owned & shared) |
+| `POST` | `/api/mindmaps` | Create a new mind map |
+| `GET` | `/api/mindmaps/trash` | Get all soft-deleted maps |
+| `GET` | `/api/mindmaps/:id` | Get specific map details |
+| `DELETE` | `/api/mindmaps/:id` | Soft-delete a map (move to trash) |
+| `DELETE` | `/api/mindmaps/:id/permanent` | Permanently delete a map |
+| `PATCH` | `/api/mindmaps/:id/star` | Toggle "starred" status |
+| `PATCH` | `/api/mindmaps/:id/title` | Update map title |
+| `PATCH` | `/api/mindmaps/:id/restore` | Restore map from trash |
+| `POST` | `/api/mindmaps/:id/share` | Share map with another user by email |
+| `GET` | `/api/mindmaps/:id/activity` | Get activity logs for a map |
 
-### 2. Mind Map Endpoints (`/api/mindmaps`)
-*All endpoints below require a valid JWT in the `Authorization` header.*
-
+### Nodes
 | Method | Endpoint | Description |
 | :--- | :--- | :--- |
-| `GET` | `/` | Get all maps (owned or collaborating). |
-| `POST` | `/` | Create a new map (auto-generates root node). |
-| `GET` | `/trash` | Get all soft-deleted mindmaps. |
-| `GET` | `/:id` | Get a specific mindmap by ID. |
-| `PATCH` | `/:id/star` | Toggle the `isStarred` status. |
-| `PATCH` | `/:id/title` | Update the mindmap title. |
-| `POST` | `/:id/share` | Invite a collaborator by email. |
-| `PATCH` | `/:id/restore` | Restore a mindmap from the trash. |
-| `DELETE` | `/:id` | Soft-delete a mindmap. |
-| `DELETE` | `/:id/permanent` | Permanently delete map and its nodes. |
+| `GET` | `/api/mindmaps/:id/nodes` | Get all nodes for a map |
+| `POST` | `/api/mindmaps/nodes` | Create a new node |
+| `PATCH` | `/api/mindmaps/nodes/:id` | Update node properties (x, y, color, size) |
+| `PATCH` | `/api/mindmaps/nodes/:id/text` | Update node text content |
+| `DELETE` | `/api/mindmaps/nodes/:id` | Delete a node (and its children) |
 
-### 3. Node Endpoints (`/api/mindmaps`)
+### Versioning
 | Method | Endpoint | Description |
 | :--- | :--- | :--- |
-| `GET` | `/:id/nodes` | Get all nodes for a specific mindmap. |
-| `POST` | `/nodes` | Create a new node. |
-| `PATCH` | `/nodes/:id` | Update node properties (`x`, `y`, `color`, `fontSize`, `text`). |
-| `PATCH` | `/nodes/:id/text` | Update node text specifically. |
-| `DELETE` | `/nodes/:id` | Delete a node and all its descendants. |
-
-### 4. Version Endpoints (`/api/mindmaps/:id/versions`)
-| Method | Endpoint | Description |
-| :--- | :--- | :--- |
-| `GET` | `/` | Get all versions for a mindmap. |
-| `POST` | `/` | Create a new manual snapshot of the current state. |
-| `POST` | `/:versionId/restore` | Restore nodes from a specific version. |
-| `DELETE` | `/:versionId` | Delete a specific version snapshot. |
+| `GET` | `/api/mindmaps/:id/versions` | Get version history |
+| `POST` | `/api/mindmaps/:id/versions` | Create a new snapshot/version |
+| `POST` | `/api/mindmaps/:id/versions/:vid/restore` | Restore map to this version |
+| `DELETE` | `/api/mindmaps/:id/versions/:vid` | Delete a specific version |
 
 ---
 
-## 🔌 Socket.io Events
+## 📡 WebSocket Events (Socket.io)
 
-### Client to Server
-- `join-map ({ mapId, user })`: Join a room for a specific mindmap with user profile.
-- `leave-map (mapId)`: Leave a mindmap room.
-- `node-added ({ mapId, node })`: Broadcast a new node addition.
-- `node-updated ({ mapId, node })`: Broadcast node property changes.
-- `node-deleted ({ mapId, nodeId })`: Broadcast node removal.
-- `node-dragged ({ mapId, nodeId, position })`: High-frequency position updates.
-- `node-editing ({ mapId, nodeId, user })`: Signal that a user is editing a specific node.
-- `node-editing-stopped ({ mapId, nodeId })`: Signal that editing has finished.
-- `map-versions-changed (mapId)`: Signal that versions have been updated.
-- `map-restored ({ mapId, nodes, versionId })`: Signal that a map has been restored to a previous state.
-- `cursor-moved ({ mapId, cursor })`: Broadcast user cursor position (`x`, `y`).
+The server listens for and emits the following events for real-time interaction.
 
-### Server to Client (Broadcast)
-- `user-list`: Received upon joining, containing all active users in the room.
-- `user-joined`: Received when a new user enters the room.
-- `user-disconnected`: Received when a user leaves or disconnects.
-- `node-added`: Received when another user adds a node.
-- `node-updated`: Received when another user updates a node.
-- `node-deleted`: Received when another user deletes a node.
-- `node-dragged`: Received for smooth real-time dragging.
-- `node-editing`: Shows which user is currently editing a node.
-- `node-editing-stopped`: Clears the editing indicator.
-- `map-versions-changed`: Notifies clients to refresh their version history.
-- `map-restored`: Forces all clients to reload the map state.
-- `cursor-moved`: Received for showing other users' presence and movement.
+### Connection & Room Management
+- `join-map`: Client joins a specific map room. Requires `{ mapId, user }`.
+- `leave-map`: Client leaves a map room. Requires `mapId`.
+
+### Node Operations (Broadcasts)
+- `node-added`: A new node was created.
+- `node-updated`: A node's properties were changed.
+- `node-deleted`: A node was removed.
+- `node-dragged`: High-frequency updates for node position during drag.
+
+### Collaboration & Presence
+- `cursor-moved`: Updates the position of a user's cursor.
+- `selection-update`: Notifies which nodes a user has selected.
+- `node-editing`: Signals that a user has started editing a node (locks it).
+- `node-editing-stopped`: Signals that editing has finished (unlocks it).
+
+### System Events
+- `user-list`: Sent to a user upon joining, listing all active users.
+- `user-joined`: Broadcast when a new user enters the room.
+- `user-disconnected`: Broadcast when a user leaves.
+- `map-versions-changed`: Notification to refresh version history.
+- `map-restored`: Notification that the map was reverted to a previous state.
 
 ---
 
-## ⚙️ Development Setup
+## 📂 Project Structure
 
-1. **Prerequisites**:
-   - Node.js (v18+)
-   - MongoDB (Local instance or Atlas connection string)
-
-2. **Installation**:
-   ```bash
-   npm install
-   ```
-
-3. **Environment (.env)**:
-   Create a `.env` file in the root directory:
-   ```env
-   PORT=5000
-   MONGO_URI=mongodb://localhost:27017/mindmap
-   JWT_SECRET=your_super_secret_key_here
-   ```
-
-4. **Running**:
-   ```bash
-   # Development mode (with nodemon)
-   npm run dev
-
-   # Production mode
-   npm start
-   ```
-
----
-
-## 🏗️ Folder Structure
 ```text
 src/
-├── config/         # Database and app configurations
-├── controllers/    # Request handlers (Business logic & tree operations)
-├── middleware/     # Auth protection and other Express middlewares
-├── models/         # Mongoose schemas (User, MindMap, Node, Version)
-├── repositories/   # Data access layer (Direct DB interactions)
-├── routes/         # Express API route definitions
-├── services/       # Core business logic services (e.g., Auth logic)
-├── socket/         # Socket.io event handlers and logic
-└── server.js       # App entry point, middleware setup, and server start
+├── config/             # Database connection and environment config
+├── controllers/        # Request handlers (Business logic)
+├── middleware/         # Express middleware (Auth, Validation)
+├── models/             # Mongoose schemas (User, MindMap, Node, Version)
+├── repositories/       # Data Access Layer (DB interactions)
+├── routes/             # API route definitions
+├── services/           # Complex business logic and reusable services
+├── socket/             # Socket.io event handlers and logic
+└── server.js           # Application entry point
 ```
+
+## 🤝 Contributing
+
+1. Fork the repository.
+2. Create a new branch (`git checkout -b feature/amazing-feature`).
+3. Commit your changes (`git commit -m 'Add some amazing feature'`).
+4. Push to the branch (`git push origin feature/amazing-feature`).
+5. Open a Pull Request.
+
+---
+
+**License**: MIT

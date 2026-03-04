@@ -11,6 +11,10 @@ const nodeSchema = new mongoose.Schema(
       type: String,
       default: "Central Idea",
     },
+    notes: {
+      type: String,
+      default: "",
+    },
     x: {
       type: Number,
       default: 0,

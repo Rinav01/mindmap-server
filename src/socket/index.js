@@ -59,12 +59,21 @@ const initSocket = (io) => {
       socket.to(mapId).emit("node-dragged", { nodeId, position });
     });
 
+    // --- SELECTION ---
+    socket.on("selection-update", ({ mapId, nodeIds, user }) => {
+      socket.to(mapId).emit("selection-update", { userId: socket.id, nodeIds, user });
+    });
+
     // --- EDITING AWARENESS ---
     socket.on("node-editing", ({ mapId, nodeId, user }) => {
+      socket.editingNodeId = nodeId;
       socket.to(mapId).emit("node-editing", { nodeId, user });
     });
 
     socket.on("node-editing-stopped", ({ mapId, nodeId }) => {
+      if (socket.editingNodeId === nodeId) {
+        socket.editingNodeId = null;
+      }
       socket.to(mapId).emit("node-editing-stopped", { nodeId });
     });
 
@@ -85,6 +94,13 @@ const initSocket = (io) => {
     socket.on("disconnect", () => {
       console.log("User disconnected:", socket.id);
       if (socket.mapId) {
+        if (socket.editingNodeId) {
+          socket.to(socket.mapId).emit("node-editing-stopped", { nodeId: socket.editingNodeId });
+        }
+
+        // Clear remote selection for this user
+        socket.to(socket.mapId).emit("selection-update", { userId: socket.id, nodeIds: [], user: socket.userInfo });
+
         socket.to(socket.mapId).emit("user-disconnected", socket.id);
 
         // Remove from room presence

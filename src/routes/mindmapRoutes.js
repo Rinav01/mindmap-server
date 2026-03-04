@@ -13,6 +13,7 @@ router.patch("/:id/restore", controller.restoreMap);
 router.delete("/:id/permanent", controller.permanentlyDeleteMap);
 router.delete("/:id", controller.deleteMap);
 router.get("/:id/nodes", controller.getNodes);
+router.get("/:id/activity", controller.getActivityLogs);
 router.post("/nodes", controller.createNode);
 router.patch("/nodes/:id", controller.updateNode);
 router.patch("/nodes/:id/text", controller.updateNodeText);
