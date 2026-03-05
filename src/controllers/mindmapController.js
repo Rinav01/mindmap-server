@@ -1,6 +1,8 @@
 const MindMap = require("../models/MindMap");
 const Node = require("../models/Node");
 const ActivityLog = require("../models/ActivityLog");
+const { canEditMap, isMapOwner } = require("../services/mapPermissionService");
+const MapMember = require("../models/MapMember");
 
 // GET ALL
 exports.getMaps = async (req, res) => {
@@ -49,6 +51,13 @@ exports.createMap = async (req, res) => {
       userId: req.user._id,
     });
 
+    // Automatically assign OWNER role
+    await MapMember.create({
+      mindMapId: map._id,
+      userId: req.user._id,
+      role: "OWNER",
+    });
+
     // Create root node
     await Node.create({
       mindMapId: map._id,
@@ -67,8 +76,11 @@ exports.createMap = async (req, res) => {
 // UPDATE MAP TITLE
 exports.updateMapTitle = async (req, res) => {
   try {
-    const map = await MindMap.findOneAndUpdate(
-      { _id: req.params.id, userId: req.user._id },
+    const isOwner = await isMapOwner(req.user._id, req.params.id);
+    if (!isOwner) return res.status(403).json({ error: "Only the map owner can change the title." });
+
+    const map = await MindMap.findByIdAndUpdate(
+      req.params.id,
       { title: req.body.title },
       { returnDocument: 'after' }
     );
@@ -97,8 +109,12 @@ exports.toggleStar = async (req, res) => {
 // SOFT DELETE
 exports.deleteMap = async (req, res) => {
   try {
-    const map = await MindMap.findOne({ _id: req.params.id, userId: req.user._id });
+    const isOwner = await isMapOwner(req.user._id, req.params.id);
+    if (!isOwner) return res.status(403).json({ error: "Only the map owner can delete it." });
+
+    const map = await MindMap.findById(req.params.id);
     if (!map) return res.status(404).json({ error: "Map not found" });
+
     map.deletedAt = new Date();
     await map.save();
     res.json({ message: "Deleted" });
@@ -133,7 +149,10 @@ exports.getTrash = async (req, res) => {
 // RESTORE FROM TRASH
 exports.restoreMap = async (req, res) => {
   try {
-    const map = await MindMap.findOne({ _id: req.params.id, userId: req.user._id });
+    const isOwner = await isMapOwner(req.user._id, req.params.id);
+    if (!isOwner) return res.status(403).json({ error: "Only the map owner can restore it." });
+
+    const map = await MindMap.findById(req.params.id);
     if (!map) return res.status(404).json({ error: "Map not found" });
     map.deletedAt = null;
     await map.save();
@@ -146,7 +165,10 @@ exports.restoreMap = async (req, res) => {
 // PERMANENTLY DELETE
 exports.permanentlyDeleteMap = async (req, res) => {
   try {
-    const map = await MindMap.findOneAndDelete({ _id: req.params.id, userId: req.user._id });
+    const isOwner = await isMapOwner(req.user._id, req.params.id);
+    if (!isOwner) return res.status(403).json({ error: "Only the map owner can permanently delete it." });
+
+    const map = await MindMap.findByIdAndDelete(req.params.id);
     if (!map) return res.status(404).json({ error: "Map not found" });
     await Node.deleteMany({ mindMapId: req.params.id });
     res.json({ message: "Permanently deleted" });
@@ -209,8 +231,8 @@ exports.createNode = async (req, res) => {
     const { mindMapId, parentId, x, y } = req.body;
 
     // Check ownership
-    const map = await MindMap.findOne({ _id: mindMapId, $or: [{ userId: req.user._id }, { collaborators: req.user._id }] });
-    if (!map) return res.status(404).json({ error: "Map not found" });
+    const hasAccess = await canEditMap(req.user._id, mindMapId);
+    if (!hasAccess) return res.status(403).json({ error: "You do not have permission to edit this map." });
 
     const node = await Node.create({
       mindMapId,
@@ -257,11 +279,9 @@ exports.updateNode = async (req, res) => {
     if (!nodeToCheck || !nodeToCheck.mindMapId) {
       return res.status(404).json({ error: "Node not found" });
     }
-    const isOwner = nodeToCheck.mindMapId.userId.toString() === req.user._id.toString();
-    const isCollaborator = nodeToCheck.mindMapId.collaborators.some(id => id.toString() === req.user._id.toString());
-    if (!isOwner && !isCollaborator) {
-      return res.status(404).json({ error: "Node not found" });
-    }
+
+    const hasAccess = await canEditMap(req.user._id, nodeToCheck.mindMapId._id);
+    if (!hasAccess) return res.status(403).json({ error: "You do not have permission to edit this map." });
 
     const oldNode = await Node.findById(req.params.id);
 
@@ -316,11 +336,8 @@ exports.updateNodeText = async (req, res) => {
     if (!nodeToCheck || !nodeToCheck.mindMapId) {
       return res.status(404).json({ error: "Node not found" });
     }
-    const isOwner = nodeToCheck.mindMapId.userId.toString() === req.user._id.toString();
-    const isCollaborator = nodeToCheck.mindMapId.collaborators.some(id => id.toString() === req.user._id.toString());
-    if (!isOwner && !isCollaborator) {
-      return res.status(404).json({ error: "Node not found" });
-    }
+    const hasAccess = await canEditMap(req.user._id, nodeToCheck.mindMapId._id);
+    if (!hasAccess) return res.status(403).json({ error: "You do not have permission to edit this map." });
 
     const node = await Node.findByIdAndUpdate(
       req.params.id,
@@ -359,11 +376,8 @@ exports.deleteNode = async (req, res) => {
     if (!nodeToCheck || !nodeToCheck.mindMapId) {
       return res.status(404).json({ error: "Node not found" });
     }
-    const isOwner = nodeToCheck.mindMapId.userId.toString() === req.user._id.toString();
-    const isCollaborator = nodeToCheck.mindMapId.collaborators.some(id => id.toString() === req.user._id.toString());
-    if (!isOwner && !isCollaborator) {
-      return res.status(404).json({ error: "Node not found" });
-    }
+    const hasAccess = await canEditMap(req.user._id, nodeToCheck.mindMapId._id);
+    if (!hasAccess) return res.status(403).json({ error: "You do not have permission to edit this map." });
 
     const node = await Node.findByIdAndDelete(req.params.id);
 
@@ -415,6 +429,66 @@ exports.getActivityLogs = async (req, res) => {
     res.json(logs);
   } catch (err) {
     console.error("Error fetching activity logs:", err);
+    res.status(500).json({ error: "Server error" });
+  }
+};
+
+// EXPORT JSON
+exports.exportJson = async (req, res) => {
+  try {
+    const map = await MindMap.findOne({ _id: req.params.id, $or: [{ userId: req.user._id }, { collaborators: req.user._id }] });
+    if (!map) return res.status(404).json({ error: "Map not found" });
+
+    const nodes = await Node.find({ mindMapId: req.params.id });
+
+    // Build the payload
+    const payload = {
+      mindmap: { title: map.title, createdAt: map.createdAt },
+      nodes: nodes.map(n => ({
+        id: n._id, text: n.text, parentId: n.parentId, notes: n.notes || ""
+      }))
+    };
+
+    res.setHeader("Content-Disposition", `attachment; filename="${map.title}.json"`);
+    res.setHeader("Content-Type", "application/json");
+    res.send(JSON.stringify(payload, null, 2));
+  } catch (err) {
+    console.error("Error exporting JSON:", err);
+    res.status(500).json({ error: "Server error" });
+  }
+};
+
+// HELPER FOR MARKDOWN
+function buildMarkdownTree(nodes, parentId, depth = 1) {
+  let md = "";
+  const children = nodes.filter(n => String(n.parentId || null) === String(parentId || null));
+  for (const child of children) {
+    const prefix = "#".repeat(depth);
+    md += `${prefix} ${child.text}\n\n`;
+    if (child.notes) {
+      md += `*${child.notes}*\n\n`;
+    }
+    md += buildMarkdownTree(nodes, child._id, depth + 1);
+  }
+  return md;
+}
+
+// EXPORT MARKDOWN
+exports.exportMarkdown = async (req, res) => {
+  try {
+    const map = await MindMap.findOne({ _id: req.params.id, $or: [{ userId: req.user._id }, { collaborators: req.user._id }] });
+    if (!map) return res.status(404).json({ error: "Map not found" });
+
+    const nodes = await Node.find({ mindMapId: req.params.id });
+
+    let md = `# ${map.title}\n\n`;
+    md += buildMarkdownTree(nodes, null, 2);
+
+    res.setHeader("Content-Disposition", `attachment; filename="${map.title}.md"`);
+    res.setHeader("Content-Type", "text/markdown");
+    res.send(md);
+  } catch (err) {
+    console.error("Error exporting Markdown:", err);
     res.status(500).json({ error: "Server error" });
   }
 };

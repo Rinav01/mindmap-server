@@ -26,6 +26,7 @@ const { protect } = require("./middleware/authMiddleware");
 app.use("/api/auth", require("./routes/authRoutes"));
 app.use("/api/mindmaps", protect, require("./routes/mindmapRoutes"));
 app.use("/api", protect, require("./routes/versionRoutes"));
+app.use("/api/templates", require("./routes/templateRoutes"));
 
 // Initialize sockets
 initSocket(io);
