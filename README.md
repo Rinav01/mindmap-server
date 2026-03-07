@@ -1,120 +1,117 @@
-# MindMap Server 🧠
+# 🧠 MindMap Pro — Backend Server
 
-A high-performance, real-time collaborative mind mapping backend built with Node.js and Express. This server powers complex hierarchical node management, role-based access control, state-based versioning, activity logging, comment threads, and live multi-user synchronization — all on a clean Controller-Service-Repository architecture.
+[![Node.js](https://img.shields.io/badge/Node.js-20+-339933?style=flat-square&logo=node.js)](https://nodejs.org/)
+[![Express](https://img.shields.io/badge/Express-5.x-000000?style=flat-square&logo=express)](https://expressjs.com/)
+[![MongoDB](https://img.shields.io/badge/MongoDB-Mongoose_9-47A248?style=flat-square&logo=mongodb)](https://mongoosejs.com/)
+[![Socket.io](https://img.shields.io/badge/Socket.io-4.x-010101?style=flat-square&logo=socket.io)](https://socket.io/)
+[![Groq](https://img.shields.io/badge/Groq-Llama_3_70B-F55036?style=flat-square)](https://groq.com/)
+
+A high-performance, real-time collaborative mind mapping backend. Handles hierarchical node management, role-based access control, versioning, activity logging, comment threads, map templates, **AI-powered map generation via Groq**, and multi-user WebSocket synchronization — built on a clean Controller → Service → Repository architecture.
 
 ---
 
-## 🚀 Features
+## 📖 Table of Contents
+
+- [✨ Features](#-features)
+- [🏗️ Architecture](#️-architecture)
+- [📂 Project Structure](#-project-structure)
+- [🗄️ Data Models](#️-data-models)
+- [🔌 API Reference](#-api-reference)
+- [📡 WebSocket Events](#-websocket-events)
+- [🧰 Tech Stack](#-tech-stack)
+- [🚦 Getting Started](#-getting-started)
+
+---
+
+## ✨ Features
+
+### 🤖 AI Mindmap Generation (Groq)
+- **One-prompt generation**: POST a topic string → Groq `llama3-70b-8192` returns a structured JSON tree → server converts to flat nodes and saves.
+- **Prompt engineering**: A strict system prompt forces valid JSON output with up to 3 depth levels, 4–6 top-level subtopics, and 2–4 children each.
+- **Subtree-centered layout**: A two-pass DFS algorithm computes each node's `x` and `y` so the tree is visually centered — no client-side layout pass required.
+- **Clean slate**: The map's existing nodes are deleted before inserting the AI-generated tree, giving a fresh start.
 
 ### 🌲 Hierarchical Node Management
-- **Infinite Nesting**: Nodes reference their parent via `parentId`, allowing arbitrarily deep trees.
-- **Recursive Cascading Deletes**: Deleting a node recursively removes all its children, preventing orphaned nodes.
-- **Spatial Positioning**: Each node stores `x` and `y` coordinates for freeform canvas-based rendering on the client.
-- **Rich Properties**: Supports custom `color`, `fontSize`, `text`, and `notes` per node.
-- **Automatic Root Node**: A "Central Idea" root node is created automatically whenever a new mind map is created.
+- **Infinite nesting** via `parentId` references.
+- **Cascading deletes**: Removing a node recursively removes all descendants.
+- **Spatial positioning**: Each node stores `x` and `y` for freeform canvas rendering.
+- **Rich properties**: `color`, `fontSize`, `text`, `notes` per node.
+- **Auto root node**: A "Central Idea" root node is created automatically for every new map.
 
-### 👥 Role-Based Collaboration & Access Control
-- **Three-Tier Permissions**: Users are assigned `OWNER`, `EDITOR`, or `VIEWER` roles on a per-map basis via the `MapMember` model.
-- **Ownership Enforcement**: Only the `OWNER` can rename, delete, restore, share, or permanently remove a map.
-- **Editor Permissions**: `EDITOR` and `OWNER` roles can create, modify, and delete nodes.
-- **Email-Based Invitations**: Owners can invite other registered users to a map by their email address.
-- **Self-Invitation Guard**: Owners cannot invite themselves.
-- **Unique Membership**: A unique compound index on `(mindMapId, userId)` ensures users can only hold one role per map.
+### 👥 Role-Based Access Control
+- **Three tiers**: `OWNER`, `EDITOR`, `VIEWER` — enforced at the API layer.
+- Owner-exclusive actions: rename, delete, restore, share, permanently remove, manage members.
+- Email-based invitations with duplicate and self-invite guards.
+- Unique compound index on `(mindMapId, userId)` ensures a user holds only one role per map.
 
 ### 🔴 Real-Time Collaboration (Socket.io)
-- **Room-Based Architecture**: Clients join dedicated rooms per `mapId`, ensuring updates are scoped correctly.
-- **Live Node Sync**: `node-added`, `node-updated`, `node-deleted`, and `node-dragged` events are broadcast to all room members in real time.
-- **Presence Awareness**: Users receive a full `user-list` on join; `user-joined` and `user-disconnected` events are broadcast to notify others.
-- **Live Cursors**: `cursor-moved` events relay real-time cursor positions and user identity across all collaborators.
-- **Selection Highlighting**: `selection-update` broadcasts which nodes each user currently has selected.
-- **Edit Locking**: `node-editing` and `node-editing-stopped` events allow clients to lock and unlock nodes while they are being edited, preventing conflicts.
-- **Graceful Disconnect**: On disconnect, any active edit lock is automatically released, and the user's remote selection is cleared.
+- Room-based architecture scoped per `mapId`.
+- Live node sync: `node-added`, `node-updated`, `node-deleted`, `node-dragged`.
+- Presence: `user-list`, `user-joined`, `user-disconnected`.
+- Live cursors: `cursor-moved` relays real-time cursor positions with user identity.
+- Edit locking: `node-editing` / `node-editing-stopped` prevent write conflicts.
+- Remote selection highlights: `selection-update` shows which nodes peers are focused on.
+- Graceful disconnect: edit locks and cursor data are automatically cleaned up.
 
 ### 🕒 Version Control & Snapshots
-- **State Snapshots**: A `Version` document stores a full array snapshot of all nodes at a given point in time.
-- **Action Types**: Versions are tagged with an `actionType` (`manual`, `auto-layout`, `align`, `delete`, `restore`) for a descriptive changelog.
-- **Custom Labels**: Snapshots can have a human-readable `label` for quick identification.
-- **One-Click Restore**: Restore a map to any snapshot via a dedicated endpoint; the restoration is broadcast via `map-restored` to all live collaborators.
-- **Version History**: Retrieve a sorted list of all versions for a given map.
+- Full-node snapshots stored as `Version` documents.
+- Action types: `manual`, `auto-layout`, `align`, `delete`, `restore`.
+- One-click restore broadcasts `map-restored` to all live collaborators.
 
 ### 📝 Activity Logging
-- **Automatic Tracking**: Server-side activity logs are created for every significant node action: `NODE_CREATED`, `NODE_DELETED`, `NODE_EDITED`, `NODE_MOVED`, `NODE_COLOR_CHANGED`.
-- **Rich Metadata**: Each log entry stores a `metadata` object (e.g., `{ oldColor, newColor }` or `{ text }`) for meaningful change descriptions.
-- **Real-Time Broadcast**: Activity logs are emitted to the map room via `activity-log-added` so all collaborators see the audit feed update instantly.
-- **Optimized Queries**: The `ActivityLog` collection has a compound index on `(mindMapId, createdAt)` for fast, sorted retrieval.
+- Automatic server-side logging for: `NODE_CREATED`, `NODE_DELETED`, `NODE_EDITED`, `NODE_MOVED`, `NODE_COLOR_CHANGED`.
+- Rich `metadata` per entry (e.g., `{ oldColor, newColor }`, `{ text }`).
+- Real-time `activity-log-added` broadcast.
+- Compound index on `(mindMapId, createdAt)` for fast sorted retrieval.
 
 ### 💬 Node Comments
-- **Threaded Discussions**: Users can post comments directly on individual nodes, keyed by both `mapId` and `nodeId`.
-- **Populated Responses**: User details (`name`, `username`, `color`) are populated on comment retrieval for a rich UI experience.
-- **Chronological Ordering**: Comments are sorted oldest-first (`createdAt: 1`) for a natural conversation flow.
-- **Permissioned Deletion**: A user can delete their own comments; Editors/Owners can also delete any comment for moderation.
-- **Real-Time Events**: `comment-added` and `comment-deleted` events are broadcast to the map room in real time.
+- Per-node threaded comments keyed by both `mapId` and `nodeId`.
+- User details populated on retrieval (`username`, `color`).
+- Real-time `comment-added` / `comment-deleted` events.
+- Permissioned deletion: owners/editors can moderate; authors can delete their own.
 
-### 📂 Lifecycle & Organization
-- **Soft Deletion & Trash Bin**: Maps are soft-deleted by setting a `deletedAt` timestamp; they are excluded from the main dashboard but accessible in a trash view.
-- **Restore from Trash**: One-click restoration clears the `deletedAt` field, bringing the map back to active status.
-- **Permanent Deletion**: Irreversibly removes the map document from the database.
-- **Starring**: Users can toggle a `isStarred` flag on any accessible map for quick-access bookmarking.
+### 🗂️ Templates
+- Pre-built map blueprints: **Startup Planning**, **Project Breakdown**, **Study Notes**, **Brainstorm**.
+- Auto-seeded on server start if the `templates` collection is empty.
+- `POST /api/templates/from-template` re-allocates fresh ObjectIDs and rewires all parent-child relationships before creating the new map.
+
+### 📦 Export
+- `GET /api/mindmaps/:id/export/json` — full node AST as JSON.
+- `GET /api/mindmaps/:id/export/md` — depth-mapped Markdown (`#` → `##` → `###`).
+
+### 📁 Map Lifecycle
+- **Soft delete & Trash Bin**: `deletedAt` timestamp instead of hard deletes.
+- **Restore from Trash**: clears `deletedAt`.
+- **Permanent delete**: irreversibly removes map and all associated data.
+- **Starring**: `isStarred` toggle for bookmarking.
 
 ### 🔐 Authentication & Security
-- **JWT-Based Auth**: All protected routes require a valid `Bearer` token in the `Authorization` header.
-- **Password Hashing**: User passwords are hashed with `bcryptjs` before storage — plain-text passwords are never persisted.
-- **Stateless Middleware**: The `protect` middleware is a single, stateless async function that verifies the token, fetches the user from the repository, and attaches it to `req.user`.
+- JWT `Bearer` tokens — all protected routes require `Authorization` header.
+- Passwords hashed with `bcryptjs` — never stored in plaintext.
+- Stateless `protect` middleware: verifies token → fetches user → attaches to `req.user`.
 
 ---
 
-## 🛠️ Technical Stack
+## 🏗️ Architecture
 
-| Category | Technology |
-| :--- | :--- |
-| **Runtime** | [Node.js](https://nodejs.org/) v18+ |
-| **Framework** | [Express.js](https://expressjs.com/) v5.x |
-| **Database** | [MongoDB](https://www.mongodb.com/) via [Mongoose](https://mongoosejs.com/) v9.x |
-| **Real-Time** | [Socket.io](https://socket.io/) v4.x |
-| **Authentication** | `jsonwebtoken` + `bcryptjs` |
-| **Dev Server** | `nodemon` |
-| **Architecture** | Controller → Service → Repository (CSR) |
+```
+HTTP Request
+    │
+    ▼
+authMiddleware (JWT verify + user attach)
+    │
+    ▼
+Route Handler
+    │
+    ▼
+Controller  ──── calls ──── Service (business logic, permission checks)
+    │                          │
+    │                          └── calls ── Repository (DB queries)
+    │
+    └── emits Socket.io event to map room
+```
 
----
-
-## ⚙️ Prerequisites
-
-- **Node.js** v18 or higher
-- **npm** v9 or higher
-- **MongoDB** (local instance or a MongoDB Atlas connection string)
-
----
-
-## 📥 Installation & Setup
-
-1. **Clone the repository**
-    ```bash
-    git clone <repository-url>
-    cd mindmap-server
-    ```
-
-2. **Install dependencies**
-    ```bash
-    npm install
-    ```
-
-3. **Configure Environment**
-
-    Create a `.env` file in the project root:
-    ```env
-    PORT=5000
-    MONGO_URI=mongodb://localhost:27017/mindmap
-    JWT_SECRET=your_super_secure_jwt_secret_key
-    ```
-
-4. **Start the Server**
-    ```bash
-    # Development (hot-reload via nodemon)
-    npm run dev
-
-    # Production
-    npm start
-    ```
+All socket events are managed in `socket/index.js`, which maintains an in-memory `roomPresence` map of `{ mapId → { socketId → userInfo } }` for presence tracking.
 
 ---
 
@@ -123,150 +120,49 @@ A high-performance, real-time collaborative mind mapping backend built with Node
 ```
 src/
 ├── config/
-│   └── db.js                     # Mongoose connection logic
+│   └── db.js                       # Mongoose connection + retry logic
 │
 ├── controllers/
-│   ├── mindMapController.js      # Map & node CRUD, activity log creation
-│   ├── mapMemberController.js    # Invite, list, update, remove members
-│   └── nodeCommentController.js  # Comment CRUD + socket broadcast
+│   ├── mindMapController.js        # Map & node CRUD, export, activity log creation
+│   ├── mapMemberController.js      # Invite, list, update role, remove members
+│   ├── nodeCommentController.js    # Comment CRUD + socket broadcast
+│   ├── aiController.js             # AI map generation via Groq (tree → nodes → DB)
+│   └── templateController.js       # Template gallery + create-from-template
 │
 ├── middleware/
-│   └── authMiddleware.js         # JWT verification, attaches req.user
+│   └── authMiddleware.js           # JWT verification, req.user injection
 │
 ├── models/
-│   ├── User.js                   # email, password (hashed), username, color
-│   ├── MindMap.js                # title, userId, collaborators[], isStarred, deletedAt
-│   ├── Node.js                   # mindMapId, parentId, text, notes, x, y, color, fontSize
-│   ├── MapMember.js              # mindMapId, userId, role (OWNER|EDITOR|VIEWER), invitedBy
-│   ├── ActivityLog.js            # mindMapId, userId, action, nodeId, metadata
-│   ├── NodeComment.js            # mapId, nodeId, userId, content
-│   ├── Version.js                # mindMapId, createdBy, snapshot[], label, actionType
-│   └── Template.js               # Reusable map templates
+│   ├── User.js                     # email, password (hash), username, color
+│   ├── MindMap.js                  # title, userId, isStarred, deletedAt
+│   ├── Node.js                     # mindMapId, parentId, text, notes, x, y, color, fontSize
+│   ├── MapMember.js                # mindMapId, userId, role (OWNER|EDITOR|VIEWER), invitedBy
+│   ├── ActivityLog.js              # mindMapId, userId, action, nodeId, metadata
+│   ├── NodeComment.js              # mapId, nodeId, userId, content
+│   ├── Version.js                  # mindMapId, createdBy, snapshot[], label, actionType
+│   └── Template.js                 # title, description, nodes[] (reusable blueprints)
 │
 ├── repositories/
-│   └── userRepository.js         # Data access layer for User documents
+│   └── userRepository.js           # Data access layer for User documents
 │
 ├── routes/
-│   ├── authRoutes.js             # /api/auth — register, login, me
-│   ├── mindmapRoutes.js          # /api/mindmaps — maps, nodes, members, versions, activity
-│   ├── nodeCommentRoutes.js      # /:mapId/nodes/:nodeId/comments (nested router)
-│   └── versionRoutes.js          # /api — versioning endpoints
+│   ├── authRoutes.js               # POST /api/auth/register|login, GET /api/auth/me
+│   ├── mindmapRoutes.js            # /api/mindmaps — maps, nodes, members, versions, activity, export
+│   ├── nodeCommentRoutes.js        # Nested under mindmapRoutes for comments
+│   ├── versionRoutes.js            # Versioning endpoints
+│   ├── templateRoutes.js           # GET /api/templates, POST /api/templates/from-template
+│   └── aiRoutes.js                 # POST /api/ai/generate-mindmap
 │
 ├── services/
-│   ├── authService.js            # User creation, password hashing, JWT signing
-│   └── mapPermissionService.js   # canEditMap(), isMapOwner(), getUserRole()
+│   ├── authService.js              # User creation, bcrypt hashing, JWT signing
+│   ├── aiService.js                # Groq API client, prompt engineering, JSON parsing
+│   └── mapPermissionService.js     # canEditMap(), isMapOwner(), getUserRole()
 │
 ├── socket/
-│   └── index.js                  # All Socket.io event handlers & room presence map
+│   └── index.js                    # All Socket.io event handlers + room presence map
 │
-└── server.js                     # App entry point (Express + Socket.io bootstrap)
+└── server.js                       # Express + Socket.io bootstrap, route mounting
 ```
-
----
-
-## 🔌 API Reference
-
-> All routes marked ✅ require an `Authorization: Bearer <token>` header.
-
-### 🔑 Authentication
-
-| Method | Endpoint | Description | Auth |
-| :--- | :--- | :--- | :---: |
-| `POST` | `/api/auth/register` | Create a new user account | ❌ |
-| `POST` | `/api/auth/login` | Log in and receive a JWT | ❌ |
-| `GET` | `/api/auth/me` | Get the current user's profile | ✅ |
-
-### 🗺️ Mind Maps
-
-| Method | Endpoint | Description |
-| :--- | :--- | :--- |
-| `GET` | `/api/mindmaps` | Get all accessible maps (owned & shared), with node counts |
-| `POST` | `/api/mindmaps` | Create a new map (auto-creates root node & OWNER membership) |
-| `GET` | `/api/mindmaps/trash` | Get all soft-deleted maps for the current user |
-| `GET` | `/api/mindmaps/:id` | Get a single map's details |
-| `PATCH` | `/api/mindmaps/:id/title` | Update the map's title (Owner only) |
-| `PATCH` | `/api/mindmaps/:id/star` | Toggle the starred status |
-| `DELETE` | `/api/mindmaps/:id` | Soft-delete a map (move to Trash) |
-| `PATCH` | `/api/mindmaps/:id/restore` | Restore a map from the Trash |
-| `DELETE` | `/api/mindmaps/:id/permanent` | Permanently delete a map |
-| `GET` | `/api/mindmaps/:id/activity` | Get the last 50 activity log entries for a map |
-
-### 🌿 Nodes
-
-| Method | Endpoint | Description |
-| :--- | :--- | :--- |
-| `GET` | `/api/mindmaps/:id/nodes` | Get all nodes for a map |
-| `POST` | `/api/mindmaps/nodes` | Create a new node (requires `mindMapId` in body) |
-| `PATCH` | `/api/mindmaps/nodes/:id` | Update node properties (`x`, `y`, `text`, `notes`, `color`, `fontSize`) |
-| `PATCH` | `/api/mindmaps/nodes/:id/text` | Update node text only |
-| `DELETE` | `/api/mindmaps/nodes/:id` | Delete a node and all its descendants |
-
-### 👥 Members & Sharing
-
-| Method | Endpoint | Description |
-| :--- | :--- | :--- |
-| `GET` | `/api/mindmaps/:id/members` | List all members and their roles |
-| `POST` | `/api/mindmaps/:id/invite` | Invite a user by email (Owner only) |
-| `PUT` | `/api/mindmaps/:id/members/:memberId` | Change a member's role (Owner only) |
-| `DELETE` | `/api/mindmaps/:id/members/:memberId` | Remove a member (Owner only) |
-
-### 💬 Node Comments
-
-| Method | Endpoint | Description |
-| :--- | :--- | :--- |
-| `GET` | `/api/mindmaps/:mapId/nodes/:nodeId/comments` | Get all comments for a node |
-| `POST` | `/api/mindmaps/:mapId/nodes/:nodeId/comments` | Post a new comment |
-| `DELETE` | `/api/mindmaps/:mapId/nodes/:nodeId/comments/:commentId` | Delete a comment |
-
-### 🕒 Versioning
-
-| Method | Endpoint | Description |
-| :--- | :--- | :--- |
-| `GET` | `/api/mindmaps/:id/versions` | Get version history for a map |
-| `POST` | `/api/mindmaps/:id/versions` | Create a new snapshot/version |
-| `POST` | `/api/mindmaps/:id/versions/:vid/restore` | Restore the map to this version |
-| `DELETE` | `/api/mindmaps/:id/versions/:vid` | Delete a specific version snapshot |
-
----
-
-## 📡 WebSocket Events (Socket.io)
-
-Clients connect and join a room for a specific map. All events are scoped within that room.
-
-### Connection & Presence
-
-| Event | Direction | Payload | Description |
-| :--- | :--- | :--- | :--- |
-| `join-map` | Client → Server | `{ mapId, user }` | Join a map's room; receive user list |
-| `leave-map` | Client → Server | `mapId` | Explicitly leave a map's room |
-| `user-list` | Server → Client | `{ [socketId]: userInfo }` | Sent to newly joined user with all active users |
-| `user-joined` | Server → Room | `{ id, name, color }` | Broadcast when a new user joins |
-| `user-disconnected` | Server → Room | `socketId` | Broadcast when a user disconnects |
-| `cursor-moved` | Client → Server | `{ mapId, cursor }` | Relay live cursor position to others |
-
-### Node Events
-
-| Event | Direction | Payload | Description |
-| :--- | :--- | :--- | :--- |
-| `node-added` | Client → Server | `{ mapId, node }` | Broadcast new node to room |
-| `node-updated` | Client → Server | `{ mapId, node }` | Broadcast updated node to room |
-| `node-deleted` | Client → Server | `{ mapId, nodeId }` | Broadcast deletion to room |
-| `node-dragged` | Client → Server | `{ mapId, nodeId, position }` | High-frequency position relay during drag |
-
-### Collaborative Awareness
-
-| Event | Direction | Payload | Description |
-| :--- | :--- | :--- | :--- |
-| `selection-update` | Client → Server | `{ mapId, nodeIds, user }` | Broadcast which nodes a user has selected |
-| `node-editing` | Client → Server | `{ mapId, nodeId, user }` | Lock a node while a user is editing it |
-| `node-editing-stopped` | Client → Server | `{ mapId, nodeId }` | Unlock a node when editing ends |
-
-### Versioning Events
-
-| Event | Direction | Payload | Description |
-| :--- | :--- | :--- | :--- |
-| `map-versions-changed` | Client → Server | `mapId` | Signal all clients to refresh version history |
-| `map-restored` | Client → Server | `{ mapId, nodes, versionId }` | Signal all clients to reload map state |
 
 ---
 
@@ -274,68 +170,263 @@ Clients connect and join a room for a specific map. All events are scoped within
 
 ### `User`
 | Field | Type | Notes |
-| :--- | :--- | :--- |
+|---|---|---|
 | `username` | String | Unique |
-| `email` | String | Unique |
+| `email` | String | Unique, lowercase |
 | `password` | String | bcrypt hash |
-| `color` | String | Assigned user color for UI presence |
+| `color` | String | UI presence color (auto-assigned) |
 
 ### `MindMap`
 | Field | Type | Notes |
-| :--- | :--- | :--- |
+|---|---|---|
 | `title` | String | Required |
 | `userId` | ObjectId → User | Owner |
-| `collaborators` | [ObjectId → User] | Legacy array; superseded by `MapMember` |
 | `isStarred` | Boolean | Default: `false` |
 | `deletedAt` | Date | `null` = active, date = in trash |
 
 ### `Node`
 | Field | Type | Notes |
-| :--- | :--- | :--- |
-| `mindMapId` | ObjectId → MindMap | Required |
-| `parentId` | ObjectId | `null` = root node |
+|---|---|---|
+| `mindMapId` | ObjectId → MindMap | Required, indexed |
+| `parentId` | ObjectId | `null` = root |
 | `text` | String | Default: `"Central Idea"` |
-| `notes` | String | Rich text notes |
-| `x`, `y` | Number | Canvas position |
+| `notes` | String | Multi-line description |
+| `x`, `y` | Number | Canvas coordinates |
 | `color` | String | Custom node color |
 | `fontSize` | Number | Custom font size |
 
 ### `MapMember`
 | Field | Type | Notes |
-| :--- | :--- | :--- |
-| `mindMapId` | ObjectId → MindMap | Indexed |
-| `userId` | ObjectId → User | Indexed |
-| `role` | Enum | `OWNER`, `EDITOR`, `VIEWER` |
+|---|---|---|
+| `mindMapId` | ObjectId → MindMap | Compound unique index |
+| `userId` | ObjectId → User | Compound unique index |
+| `role` | Enum | `OWNER` \| `EDITOR` \| `VIEWER` |
 | `invitedBy` | ObjectId → User | Who sent the invite |
 
 ### `ActivityLog`
 | Field | Type | Notes |
-| :--- | :--- | :--- |
-| `mindMapId` | ObjectId → MindMap | Indexed with `createdAt` |
-| `userId` | ObjectId → User | Who performed the action |
-| `action` | Enum | `NODE_CREATED`, `NODE_DELETED`, `NODE_EDITED`, `NODE_MOVED`, `NODE_COLOR_CHANGED` |
-| `nodeId` | String | Reference to affected node |
-| `metadata` | Mixed | Contextual data (e.g., old/new text or color) |
+|---|---|---|
+| `mindMapId` | ObjectId → MindMap | Compound index with `createdAt` |
+| `userId` | ObjectId → User | Actor |
+| `action` | Enum | `NODE_CREATED` \| `NODE_DELETED` \| `NODE_EDITED` \| `NODE_MOVED` \| `NODE_COLOR_CHANGED` |
+| `nodeId` | String | Affected node |
+| `metadata` | Mixed | Contextual data (old/new values) |
 
 ### `Version`
 | Field | Type | Notes |
-| :--- | :--- | :--- |
-| `mindMapId` | ObjectId → MindMap | Indexed |
+|---|---|---|
+| `mindMapId` | ObjectId | Indexed |
 | `createdBy` | ObjectId → User | Snapshot author |
-| `snapshot` | Array | Full copy of all nodes at time of save |
-| `label` | String | Optional human-readable label |
-| `actionType` | Enum | `manual`, `auto-layout`, `align`, `delete`, `restore` |
+| `snapshot` | Array | Full copy of all nodes |
+| `label` | String | Human-readable name |
+| `actionType` | Enum | `manual` \| `auto-layout` \| `align` \| `delete` \| `restore` |
+
+### `NodeComment`
+| Field | Type | Notes |
+|---|---|---|
+| `mapId` | ObjectId → MindMap | Indexed |
+| `nodeId` | String | Target node |
+| `userId` | ObjectId → User | Author (populated on read) |
+| `content` | String | Comment body |
+
+### `Template`
+| Field | Type | Notes |
+|---|---|---|
+| `title` | String | Display name |
+| `description` | String | Short description |
+| `nodes` | Array | Pre-wired node tree (titles + parentId refs) |
+| `isPublic` | Boolean | Visibility flag |
 
 ---
 
-## 🤝 Contributing
+## 🔌 API Reference
 
-1. Fork the repository.
-2. Create a feature branch: `git checkout -b feature/my-feature`
-3. Commit your changes: `git commit -m 'feat: add amazing feature'`
-4. Push to the branch: `git push origin feature/my-feature`
-5. Open a Pull Request.
+> All routes marked ✅ require `Authorization: Bearer <token>`
+
+### 🔑 Authentication
+
+| Method | Endpoint | Auth | Description |
+|---|---|:---:|---|
+| `POST` | `/api/auth/register` | ❌ | Create account |
+| `POST` | `/api/auth/login` | ❌ | Login + receive JWT |
+| `GET` | `/api/auth/me` | ✅ | Get current user profile |
+
+### 🗺️ Mind Maps
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/api/mindmaps` | All accessible maps (owned + shared) with node counts |
+| `POST` | `/api/mindmaps` | Create new map (auto-creates root node + OWNER membership) |
+| `GET` | `/api/mindmaps/trash` | Soft-deleted maps |
+| `GET` | `/api/mindmaps/:id` | Single map details |
+| `PATCH` | `/api/mindmaps/:id/title` | Rename (Owner only) |
+| `PATCH` | `/api/mindmaps/:id/star` | Toggle starred |
+| `DELETE` | `/api/mindmaps/:id` | Soft-delete (to Trash) |
+| `PATCH` | `/api/mindmaps/:id/restore` | Restore from Trash |
+| `DELETE` | `/api/mindmaps/:id/permanent` | Permanently delete |
+| `GET` | `/api/mindmaps/:id/activity` | Last 50 activity log entries |
+| `GET` | `/api/mindmaps/:id/export/json` | Export full map as JSON |
+| `GET` | `/api/mindmaps/:id/export/md` | Export map as Markdown |
+
+### 🌿 Nodes
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/api/mindmaps/:id/nodes` | All nodes for a map |
+| `POST` | `/api/mindmaps/nodes` | Create node (`mindMapId` in body) |
+| `PATCH` | `/api/mindmaps/nodes/:id` | Update node (`x`, `y`, `text`, `notes`, `color`, `fontSize`) |
+| `PATCH` | `/api/mindmaps/nodes/:id/text` | Update node text only |
+| `DELETE` | `/api/mindmaps/nodes/:id` | Delete node + all descendants |
+
+### 👥 Members & Sharing
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/api/mindmaps/:id/members` | List members + roles |
+| `POST` | `/api/mindmaps/:id/invite` | Invite by email (Owner only) |
+| `PUT` | `/api/mindmaps/:id/members/:memberId` | Change role (Owner only) |
+| `DELETE` | `/api/mindmaps/:id/members/:memberId` | Remove member (Owner only) |
+
+### 💬 Comments
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/api/mindmaps/:mapId/nodes/:nodeId/comments` | Get node comments |
+| `POST` | `/api/mindmaps/:mapId/nodes/:nodeId/comments` | Post comment |
+| `DELETE` | `/api/mindmaps/:mapId/nodes/:nodeId/comments/:commentId` | Delete comment |
+
+### 🕒 Versioning
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/api/mindmaps/:id/versions` | Version history |
+| `POST` | `/api/mindmaps/:id/versions` | Create snapshot |
+| `POST` | `/api/mindmaps/:id/versions/:vid/restore` | Restore snapshot |
+| `DELETE` | `/api/mindmaps/:id/versions/:vid` | Delete snapshot |
+
+### 🗂️ Templates
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/api/templates` | List all public templates |
+| `POST` | `/api/templates/from-template` | Create new map from template |
+
+### 🤖 AI Generation
+
+| Method | Endpoint | Auth | Description |
+|---|---|:---:|---|
+| `POST` | `/api/ai/generate-mindmap` | ✅ | Generate a full mindmap from a topic string using Groq |
+
+**Request body:**
+```json
+{ "topic": "Machine Learning", "mindMapId": "64abc..." }
+```
+
+**What it does:**
+1. Sends topic to Groq `llama3-70b-8192` with a strict JSON-forcing system prompt
+2. Parses the returned tree (title + children[])
+3. Runs a two-pass DFS to compute subtree-centered `x,y` positions for each node
+4. Deletes all existing nodes in the map
+5. Bulk-inserts the new AI-generated nodes
+6. Returns the `NodeType[]` array
 
 ---
 
-**License**: MIT
+## 📡 WebSocket Events
+
+Clients connect and join a room per `mapId`. All events are room-scoped.
+
+### Connection & Presence
+
+| Event | Direction | Payload | Description |
+|---|---|---|---|
+| `join-map` | Client → Server | `{ mapId, user }` | Join room; receive full user list |
+| `leave-map` | Client → Server | `mapId` | Leave room |
+| `user-list` | Server → Client | `{ [socketId]: userInfo }` | Current users in room |
+| `user-joined` | Server → Room | `{ id, name, color }` | New user joined |
+| `user-disconnected` | Server → Room | `socketId` | User left |
+| `cursor-moved` | Client → Server | `{ mapId, cursor }` | Relay cursor position to peers |
+
+### Node Events
+
+| Event | Direction | Payload | Description |
+|---|---|---|---|
+| `node-added` | Client → Server | `{ mapId, node }` | Broadcast new node |
+| `node-updated` | Client → Server | `{ mapId, node }` | Broadcast node update |
+| `node-deleted` | Client → Server | `{ mapId, nodeId }` | Broadcast deletion |
+| `node-dragged` | Client → Server | `{ mapId, nodeId, position }` | High-frequency drag position relay |
+
+### Collaborative Awareness
+
+| Event | Direction | Payload | Description |
+|---|---|---|---|
+| `selection-update` | Client → Server | `{ mapId, nodeIds, user }` | Broadcast current selection |
+| `node-editing` | Client → Server | `{ mapId, nodeId, user }` | Lock node during edit |
+| `node-editing-stopped` | Client → Server | `{ mapId, nodeId }` | Unlock node after edit |
+
+### Comments & Versioning
+
+| Event | Direction | Payload | Description |
+|---|---|---|---|
+| `comment-added` | Server → Room | `NodeComment` | New comment posted |
+| `comment-deleted` | Server → Room | `{ commentId }` | Comment removed |
+| `activity-log-added` | Server → Room | `ActivityLog` | New activity entry |
+| `map-versions-changed` | Client → Server | `mapId` | Prompt others to refresh version list |
+| `map-restored` | Client → Server | `{ mapId, nodes, versionId }` | Prompt all clients to reload state |
+
+---
+
+## 🧰 Tech Stack
+
+| Category | Technology |
+|---|---|
+| **Runtime** | Node.js 20+ |
+| **Framework** | Express.js 5.x |
+| **Database** | MongoDB + Mongoose 9.x |
+| **Real-Time** | Socket.io 4.x |
+| **Authentication** | `jsonwebtoken` + `bcryptjs` |
+| **AI** | Groq SDK (`llama3-70b-8192`) |
+| **Dev Server** | `nodemon` |
+| **Architecture** | Controller → Service → Repository |
+
+---
+
+## 🚦 Getting Started
+
+### Prerequisites
+- Node.js 20+
+- MongoDB (local or Atlas)
+- Groq API key (free at [console.groq.com](https://console.groq.com))
+
+### 1. Clone & Install
+```bash
+git clone https://github.com/your-username/mindmap-server.git
+cd mindmap-server
+npm install
+```
+
+### 2. Configure Environment
+Create a `.env` file in the project root:
+```env
+PORT=5000
+MONGO_URI=mongodb://localhost:27017/mindmap
+JWT_SECRET=your_super_secure_jwt_secret_key
+GROQ_API_KEY=gsk_your_groq_api_key_here
+```
+
+### 3. Run
+```bash
+# Development (hot-reload via nodemon)
+npm run dev
+
+# Production
+npm start
+```
+
+Server starts on `http://localhost:5000`.
+
+---
+
+## 📜 License
+
+MIT
