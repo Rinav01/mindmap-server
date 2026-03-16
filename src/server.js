@@ -21,6 +21,9 @@ app.set("io", io);
 app.use(cors());
 app.use(express.json());
 
+// Health check endpoint for Render
+app.get("/health", (req, res) => res.status(200).json({ status: "ok" }));
+
 const { protect } = require("./middleware/authMiddleware");
 
 app.use("/api/auth", require("./routes/authRoutes"));
