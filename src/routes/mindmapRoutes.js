@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const controller = require("../controllers/mindMapController");
+const controller = require("../controllers/mindmapController"); // Fixed capitalization
 const memberController = require("../controllers/mapMemberController");
 const nodeCommentRoutes = require("./nodeCommentRoutes");
 
