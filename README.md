@@ -666,18 +666,6 @@ Clients connect and join a room per `mapId`. All events are room-scoped.
 
 ---
 
-## 📣 Resume Highlights
-
-> Copy-paste ready bullets for your CV or LinkedIn.
-
-- **Built a real-time collaborative mind mapping backend** supporting simultaneous multi-user editing via Socket.io room architecture with live cursor relay and edit locking.
-- **Architected an offline-first sync engine** using IndexedDB operation queuing, idempotent deduplication via UUID tracking, and Last Write Wins (LWW) conflict resolution for safe offline-to-online sync.
-- **Integrated AI-powered content generation** using Groq's Llama 3 70B model with custom prompt engineering, producing spatially-laid-out mind map trees via a server-side two-pass DFS algorithm.
-- **Designed a layered Node.js architecture** (Controller → Service → Repository) with role-based access control (OWNER / EDITOR / VIEWER), JWT authentication, soft-delete lifecycle, and full version snapshotting.
-- **Implemented an in-memory WebSocket presence system** with automatic cleanup on disconnect, enabling real-time user presence, cursor tracking, and selection broadcasting with zero database writes for ephemeral state.
-
----
-
 ## 🗺️ Roadmap
 
 ### Near-Term
