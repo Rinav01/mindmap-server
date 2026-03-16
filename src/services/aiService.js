@@ -60,4 +60,56 @@ Rules:
   }
 }
 
-module.exports = { generateMindmap };
+/**
+ * Calls the Groq API to brainstorm child topics for a specific node.
+ * @param {string} topic - The parent topic string to expand.
+ * @param {number} limit - The target number of child node suggestions (default 5).
+ * @returns {Promise<Array<string>>} - Array of child topic strings.
+ */
+async function expandNode(topic, limit = 5) {
+  const systemPrompt = `You are an expert brainstorming assistant. Given a parent topic from a mind map, generate exactly ${limit} concise, logically related child topics that expand upon it.
+You MUST respond with ONLY a valid JSON object and nothing else — no markdown, no explanation.
+
+The JSON must follow this exact structure:
+{
+  "children": [
+    "Child topic 1",
+    "Child topic 2",
+    "Child topic 3",
+    "Child topic 4",
+    "Child topic 5"
+  ]
+}
+
+Rules:
+- Titles must be very concise (1-5 words max)
+- They should represent distinct sub-categories or logical next steps
+- Respond ONLY with the JSON object`;
+
+  const completion = await groq.chat.completions.create({
+    model: "llama-3.3-70b-versatile",
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: `Expand this topic into its immediate subtopics: "${topic}"` },
+    ],
+    temperature: 0.8,
+    max_tokens: 512,
+  });
+
+  const raw = completion.choices[0]?.message?.content?.trim();
+  if (!raw) throw new Error("Empty response from Groq API");
+
+  const cleaned = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
+
+  try {
+    const data = JSON.parse(cleaned);
+    if (!Array.isArray(data.children)) {
+      throw new Error("Parsed JSON must have a 'children' array");
+    }
+    return data.children;
+  } catch (err) {
+    throw new Error(`Failed to parse Groq expansion response: ${err.message}. Raw: ${cleaned.slice(0, 100)}`);
+  }
+}
+
+module.exports = { generateMindmap, expandNode };

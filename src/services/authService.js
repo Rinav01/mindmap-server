@@ -52,6 +52,8 @@ class AuthService {
                 name: user.username,
                 email: user.email,
                 color: user.color,
+                hasCompletedOnboarding: user.hasCompletedOnboarding || false,
+                hasCompletedAdvancedTutorial: user.hasCompletedAdvancedTutorial || false,
             },
         };
     }
@@ -76,6 +78,8 @@ class AuthService {
                 name: user.username,
                 email: user.email,
                 color: user.color,
+                hasCompletedOnboarding: user.hasCompletedOnboarding || false,
+                hasCompletedAdvancedTutorial: user.hasCompletedAdvancedTutorial || false,
             },
         };
     }

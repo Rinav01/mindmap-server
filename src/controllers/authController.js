@@ -50,13 +50,47 @@ const getMe = async (req, res) => {
         email: user.email,
         name: user.name || user.username,
         color: user.color || "#3b82f6",
+        hasCompletedOnboarding: user.hasCompletedOnboarding || false,
+        hasCompletedAdvancedTutorial: user.hasCompletedAdvancedTutorial || false,
         createdAt: user.createdAt,
         updatedAt: user.updatedAt,
     });
+};
+
+const completeOnboarding = async (req, res) => {
+    try {
+        const user = req.user;
+        if (!user) {
+            return res.status(401).json({ message: "Not authorized" });
+        }
+        user.hasCompletedOnboarding = true;
+        await user.save();
+        res.status(200).json({ hasCompletedOnboarding: true });
+    } catch (error) {
+        console.error("Complete Onboarding Error:", error.message);
+        res.status(500).json({ message: "Server error" });
+    }
+};
+
+const completeAdvancedTutorial = async (req, res) => {
+    try {
+        const user = req.user;
+        if (!user) {
+            return res.status(401).json({ message: "Not authorized" });
+        }
+        user.hasCompletedAdvancedTutorial = true;
+        await user.save();
+        res.status(200).json({ hasCompletedAdvancedTutorial: true });
+    } catch (error) {
+        console.error("Complete Advanced Tutorial Error:", error.message);
+        res.status(500).json({ message: "Server error" });
+    }
 };
 
 module.exports = {
     registerUser,
     loginUser,
     getMe,
+    completeOnboarding,
+    completeAdvancedTutorial,
 };

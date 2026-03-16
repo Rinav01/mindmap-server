@@ -24,6 +24,7 @@ router.patch("/:id/restore", controller.restoreMap);
 router.delete("/:id/permanent", controller.permanentlyDeleteMap);
 router.delete("/:id", controller.deleteMap);
 router.get("/:id/nodes", controller.getNodes);
+router.post("/:id/sync", controller.syncOperations);
 router.get("/:id/activity", controller.getActivityLogs);
 router.post("/nodes", controller.createNode);
 router.patch("/nodes/:id", controller.updateNode);

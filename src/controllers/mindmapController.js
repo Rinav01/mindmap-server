@@ -3,6 +3,7 @@ const Node = require("../models/Node");
 const ActivityLog = require("../models/ActivityLog");
 const { canEditMap, isMapOwner } = require("../services/mapPermissionService");
 const MapMember = require("../models/MapMember");
+const ProcessedOperation = require("../models/ProcessedOperation");
 
 // GET ALL
 exports.getMaps = async (req, res) => {
@@ -490,5 +491,93 @@ exports.exportMarkdown = async (req, res) => {
   } catch (err) {
     console.error("Error exporting Markdown:", err);
     res.status(500).json({ error: "Server error" });
+  }
+};
+
+// SYNC OPERATIONS
+exports.syncOperations = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { operations } = req.body;
+
+    if (!operations || !Array.isArray(operations)) {
+      return res.status(400).json({ error: "Invalid operations payload" });
+    }
+
+    // Permission Check
+    if (!(await canEditMap(req.user._id, id))) {
+      return res.status(403).json({ error: "Not authorized to edit this map" });
+    }
+
+    const acknowledged = [];
+    const broadcastEvents = [];
+
+    for (const op of operations) {
+      // 1. Deduplication
+      const exists = await ProcessedOperation.findOne({ operationId: op.operationId });
+      if (exists) {
+        acknowledged.push(op.operationId);
+        continue;
+      }
+
+      // 2. Fetch target node for Last Write Wins
+      let node = null;
+      if (op.type !== "CREATE_NODE") {
+        node = await Node.findById(op.nodeId);
+        if (node && node.updatedAt && new Date(op.timestamp) < node.updatedAt) {
+          // Operation is too old. Acknowledge to drop it, but don't apply.
+          acknowledged.push(op.operationId);
+          await ProcessedOperation.create({ operationId: op.operationId, mapId: id });
+          continue;
+        }
+      }
+
+      // 3. Apply Operation Action
+      try {
+        if (op.type === "CREATE_NODE") {
+          node = await Node.findById(op.nodeId);
+          if (!node) {
+            node = new Node({ _id: op.nodeId, mindMapId: id, ...op.payload });
+            await node.save();
+          }
+          broadcastEvents.push({ event: "node-added", payload: node, clientId: op.clientId });
+        } else if (op.type === "MOVE_NODE" && node) {
+          node.x = op.payload.x;
+          node.y = op.payload.y;
+          await node.save();
+          broadcastEvents.push({ event: "node-dragged", payload: { nodeId: node._id, position: { x: node.x, y: node.y } }, clientId: op.clientId });
+        } else if (op.type === "EDIT_NODE" && node) {
+          Object.assign(node, op.payload);
+          await node.save();
+          broadcastEvents.push({ event: "node-updated", payload: node, clientId: op.clientId });
+        } else if (op.type === "DELETE_NODE") {
+          if (node) {
+            await deleteNodeChildren(op.nodeId);
+            await Node.findByIdAndDelete(op.nodeId);
+          }
+          broadcastEvents.push({ event: "node-deleted", payload: op.nodeId, clientId: op.clientId });
+        }
+
+        // Mark successfully processed
+        await ProcessedOperation.create({ operationId: op.operationId, mapId: id });
+        acknowledged.push(op.operationId);
+      } catch (opErr) {
+        console.error(`Operation ${op.operationId} failed:`, opErr);
+        // Do not add to acknowledged so the client retries later
+      }
+    }
+
+    // 4. Broadcast
+    const io = req.app.get("io");
+    if (io) {
+      for (const evt of broadcastEvents) {
+        io.to(id.toString()).emit(evt.event, evt.payload, evt.clientId);
+      }
+    }
+
+    res.json({ acknowledged });
+  } catch (err) {
+    console.error("Sync error:", err);
+    res.status(500).json({ error: "Server sync engine error" });
   }
 };

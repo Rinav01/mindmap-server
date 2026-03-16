@@ -1,6 +1,6 @@
 const mongoose = require("mongoose");
 const Node = require("../models/Node");
-const { generateMindmap } = require("../services/aiService");
+const { generateMindmap, expandNode } = require("../services/aiService");
 
 /**
  * POST /api/ai/generate-mindmap
@@ -82,4 +82,49 @@ const generateMindmapController = async (req, res) => {
     }
 };
 
-module.exports = { generateMindmapController };
+/**
+ * POST /api/ai/expand-node
+ * Body: { mindMapId: string, nodeId: string, text: string }
+ *
+ * Expands a specific node by generating child nodes via Groq AI.
+ */
+const expandNodeController = async (req, res) => {
+    const { mindMapId, nodeId, text } = req.body;
+
+    if (!mindMapId || !nodeId || !text) {
+        return res.status(400).json({ message: "mindMapId, nodeId, and text are required" });
+    }
+
+    try {
+        // 1. Get the parent node to know where to place the children initially
+        const parentNode = await Node.findById(nodeId);
+        if (!parentNode) {
+            return res.status(404).json({ message: "Parent node not found" });
+        }
+
+        // 2. Ask AI to brainstorm children topics
+        const childTopics = await expandNode(text, 5);
+
+        // 3. Create node documents for each child topic
+        // We stack them exactly on top of the parent to let the frontend auto-layout sequence them out
+        const nodeDocs = childTopics.map((topic) => ({
+            _id: new mongoose.Types.ObjectId(),
+            mindMapId: new mongoose.Types.ObjectId(mindMapId),
+            text: topic,
+            x: parentNode.x,
+            y: parentNode.y,
+            parentId: new mongoose.Types.ObjectId(nodeId),
+        }));
+
+        // 4. Bulk insert the children
+        const createdNodes = await Node.insertMany(nodeDocs);
+
+        // 5. Return created nodes
+        return res.status(201).json(createdNodes);
+    } catch (err) {
+        console.error("[AI Controller] Error expanding node:", err);
+        return res.status(500).json({ message: err.message || "AI node expansion failed" });
+    }
+};
+
+module.exports = { generateMindmapController, expandNodeController };

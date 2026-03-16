@@ -23,6 +23,14 @@ const userSchema = new mongoose.Schema(
             type: String,
             default: "#3b82f6",
         },
+        hasCompletedOnboarding: {
+            type: Boolean,
+            default: false,
+        },
+        hasCompletedAdvancedTutorial: {
+            type: Boolean,
+            default: false,
+        },
     },
     { timestamps: true }
 );
