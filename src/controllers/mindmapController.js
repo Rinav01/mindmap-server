@@ -497,8 +497,11 @@ exports.exportMarkdown = async (req, res) => {
 // SYNC OPERATIONS
 exports.syncOperations = async (req, res) => {
   try {
+    const mongoose = require("mongoose");
+    const User = require("../models/User");
     const { id } = req.params;
     const { operations } = req.body;
+
 
     if (!operations || !Array.isArray(operations)) {
       return res.status(400).json({ error: "Invalid operations payload" });
@@ -541,15 +544,20 @@ exports.syncOperations = async (req, res) => {
             await node.save();
           }
           broadcastEvents.push({ event: "node-added", payload: node, clientId: op.clientId });
-        } else if (op.type === "MOVE_NODE" && node) {
-          node.x = op.payload.x;
-          node.y = op.payload.y;
-          await node.save();
-          broadcastEvents.push({ event: "node-dragged", payload: { nodeId: node._id, position: { x: node.x, y: node.y } }, clientId: op.clientId });
-        } else if (op.type === "EDIT_NODE" && node) {
-          Object.assign(node, op.payload);
-          await node.save();
-          broadcastEvents.push({ event: "node-updated", payload: node, clientId: op.clientId });
+        } else if (op.type === "MOVE_NODE") {
+          if (node) {
+            node.x = op.payload.x;
+            node.y = op.payload.y;
+            await node.save();
+            broadcastEvents.push({ event: "node-dragged", payload: { nodeId: node._id, position: { x: node.x, y: node.y } }, clientId: op.clientId });
+          }
+          // If node doesn't exist yet, still acknowledge so it doesn't retry forever
+        } else if (op.type === "EDIT_NODE") {
+          if (node) {
+            Object.assign(node, op.payload);
+            await node.save();
+            broadcastEvents.push({ event: "node-updated", payload: node, clientId: op.clientId });
+          }
         } else if (op.type === "DELETE_NODE") {
           if (node) {
             await deleteNodeChildren(op.nodeId);
@@ -558,20 +566,63 @@ exports.syncOperations = async (req, res) => {
           broadcastEvents.push({ event: "node-deleted", payload: op.nodeId, clientId: op.clientId });
         }
 
-        // Mark successfully processed
+        // Mark successfully processed — ALWAYS acknowledge to prevent infinite retry
         await ProcessedOperation.create({ operationId: op.operationId, mapId: id });
         acknowledged.push(op.operationId);
+
+        // Generate Activity Log (skip MOVE_NODE — it's noise from auto-layout)
+        if (op.type !== "MOVE_NODE") {
+          try {
+              let action = null;
+              let metadata = {};
+              if (op.type === "CREATE_NODE") action = "NODE_CREATED";
+              else if (op.type === "DELETE_NODE") {
+                  action = "NODE_DELETED";
+                  metadata = { text: node ? node.text : "Unknown" };
+              }
+              else if (op.type === "EDIT_NODE") {
+                  if (op.payload.color) action = "NODE_COLOR_CHANGED";
+                  else action = "NODE_EDITED";
+                  if (op.payload.text) metadata = { text: op.payload.text };
+              }
+
+              if (action) {
+                  const log = await ActivityLog.create({
+                      mindMapId: id,
+                      userId: req.user._id,
+                      action,
+                      nodeId: op.nodeId,
+                      metadata,
+                  });
+                  const populatedUser = await User.findById(req.user._id).select("username color");
+                  const logPayload = { ...log.toObject(), userId: populatedUser };
+                  broadcastEvents.push({ event: "activity-log-added", payload: logPayload, clientId: op.clientId });
+              }
+          } catch (logErr) {
+              // Activity log creation failed silently
+          }
+        }
+
       } catch (opErr) {
-        console.error(`Operation ${op.operationId} failed:`, opErr);
-        // Do not add to acknowledged so the client retries later
+        // Still acknowledge the operation to prevent infinite retry loops.
+        // The operation data is likely invalid and retrying won't help.
+        try {
+          await ProcessedOperation.create({ operationId: op.operationId, mapId: id });
+        } catch (_) { /* ignore duplicate key errors */ }
+        acknowledged.push(op.operationId);
       }
     }
 
-    // 4. Broadcast
+    // 4. Broadcast only activity log events (not node events).
+    // Node events (node-added, node-dragged, etc.) are already broadcast by the
+    // sender's socket.emit calls. Re-broadcasting them from sync causes duplicate
+    // state updates and crashes when CLIENT_ID changes on page refresh.
     const io = req.app.get("io");
     if (io) {
       for (const evt of broadcastEvents) {
-        io.to(id.toString()).emit(evt.event, evt.payload, evt.clientId);
+        if (evt.event === "activity-log-added") {
+          io.to(id.toString()).emit(evt.event, evt.payload);
+        }
       }
     }
 

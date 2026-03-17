@@ -1,5 +1,7 @@
 const mongoose = require("mongoose");
 const Node = require("../models/Node");
+const User = require("../models/User");
+const ActivityLog = require("../models/ActivityLog");
 const { generateMindmap, expandNode } = require("../services/aiService");
 
 /**
@@ -74,7 +76,22 @@ const generateMindmapController = async (req, res) => {
         // 4. Bulk-insert AI-generated nodes
         const createdNodes = await Node.insertMany(nodeDocs);
 
-        // 4. Return created nodes (same shape the frontend already knows)
+        // 5. Create and broadcast ActivityLog
+        const populatedUser = await User.findById(req.user._id).select("username color");
+        try {
+            const log = await ActivityLog.create({
+                mindMapId: mindMapId,
+                userId: req.user._id,
+                action: "AI_GENERATED",
+                metadata: { text: topic.trim() },
+            });
+            const logPayload = { ...log.toObject(), userId: populatedUser };
+            req.app.get("io").to(mindMapId.toString()).emit("activity-log-added", logPayload);
+        } catch (logErr) {
+            // Activity log creation failed silently
+        }
+
+        // 6. Return created nodes (same shape the frontend already knows)
         return res.status(201).json(createdNodes);
     } catch (err) {
         console.error("[AI Controller] Error generating mindmap:", err);
@@ -119,7 +136,23 @@ const expandNodeController = async (req, res) => {
         // 4. Bulk insert the children
         const createdNodes = await Node.insertMany(nodeDocs);
 
-        // 5. Return created nodes
+        // 5. Create and broadcast ActivityLog
+        const populatedUser = await User.findById(req.user._id).select("username color");
+        try {
+            const log = await ActivityLog.create({
+                mindMapId: mindMapId,
+                userId: req.user._id,
+                action: "AI_EXPANDED",
+                nodeId: nodeId,
+                metadata: { text: text },
+            });
+            const logPayload = { ...log.toObject(), userId: populatedUser };
+            req.app.get("io").to(mindMapId.toString()).emit("activity-log-added", logPayload);
+        } catch (logErr) {
+            // Activity log creation failed silently
+        }
+
+        // 6. Return created nodes
         return res.status(201).json(createdNodes);
     } catch (err) {
         console.error("[AI Controller] Error expanding node:", err);

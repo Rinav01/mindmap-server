@@ -13,7 +13,7 @@ const ActivityLogSchema = new mongoose.Schema({
     },
     action: {
         type: String,
-        enum: ["NODE_CREATED", "NODE_DELETED", "NODE_EDITED", "NODE_MOVED", "NODE_COLOR_CHANGED"],
+        enum: ["NODE_CREATED", "NODE_DELETED", "NODE_EDITED", "NODE_MOVED", "NODE_COLOR_CHANGED", "AI_GENERATED", "AI_EXPANDED"],
         required: true,
     },
     nodeId: {

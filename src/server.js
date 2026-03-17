@@ -2,6 +2,7 @@ const express = require("express");
 const cors = require("cors");
 require("dotenv").config({ override: true });
 require("./config/db");
+const { globalLimiter, authLimiter, aiLimiter } = require("./middleware/rateLimiter");
 
 const http = require("http");
 const { Server } = require("socket.io");
@@ -20,17 +21,18 @@ const io = new Server(server, {
 app.set("io", io);
 app.use(cors());
 app.use(express.json());
+app.use(globalLimiter);
 
 // Health check endpoint for Render
 app.get("/health", (req, res) => res.status(200).json({ status: "ok" }));
 
 const { protect } = require("./middleware/authMiddleware");
 
-app.use("/api/auth", require("./routes/authRoutes"));
+app.use("/api/auth", authLimiter, require("./routes/authRoutes"));
 app.use("/api/mindmaps", protect, require("./routes/mindmapRoutes"));
 app.use("/api", protect, require("./routes/versionRoutes"));
 app.use("/api/templates", require("./routes/templateRoutes"));
-app.use("/api/ai", require("./routes/aiRoutes"));
+app.use("/api/ai", aiLimiter, require("./routes/aiRoutes"));
 
 // Initialize sockets
 initSocket(io);
