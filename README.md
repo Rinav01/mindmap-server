@@ -148,15 +148,52 @@ The result is a collaborative canvas that feels as fast locally as it does onlin
 - `GET /api/mindmaps/:id/export/md` — depth-mapped Markdown (`#` → `##` → `###`).
 
 ### 📁 Map Lifecycle
-- **Soft delete & Trash Bin**: `deletedAt` timestamp instead of hard deletes.
-- **Restore from Trash**: clears `deletedAt`.
-- **Permanent delete**: irreversibly removes map and all associated data.
-- **Starring**: `isStarred` toggle for bookmarking.
+
+```mermaid
+stateDiagram-v2
+    [*] --> Active : Create Map
+    Active --> Active : Edit / Save / Star
+    Active --> In_Trash : Soft Delete (set deletedAt)
+    In_Trash --> Active : Restore (clear deletedAt)
+    In_Trash --> [*] : Permanent Delete (hard delete)
+```
+
+- **Soft delete & Trash Bin**: `deletedAt` timestamp instead of hard deletes. Transitions the map status to Trash.
+- **Restore from Trash**: clears `deletedAt`, returning the state back to Active.
+- **Permanent delete**: irreversibly removes the map and all associated data, including descendants, memberships, activity logs, and snapshots.
+- **Starring**: `isStarred` toggle for bookmarking Active maps.
 
 ### 🔐 Authentication & Security
-- JWT `Bearer` tokens — all protected routes require `Authorization` header.
-- Passwords hashed with `bcryptjs` — never stored in plaintext.
-- Stateless `protect` middleware: verifies token → fetches user → attaches to `req.user`.
+
+```mermaid
+sequenceDiagram
+    actor Client
+    participant AuthRoute as authRoutes
+    participant AuthService as authService
+    participant DB as MongoDB
+    
+    Client->>AuthRoute: POST /login (email, password)
+    AuthRoute->>AuthService: validate credentials
+    AuthService->>DB: User.findOne({ email })
+    DB-->>AuthService: User document (with hash)
+    AuthService->>AuthService: bcrypt.compare(pwd, hash)
+    AuthService->>AuthService: jwt.sign({ id }, JWT_SECRET)
+    AuthService-->>AuthRoute: Token & User Profile
+    AuthRoute-->>Client: 200 OK (token)
+    
+    Note over Client, DB: Subsequent Protected Requests
+    Client->>ResourceRoute: GET /api/mindmaps (Bearer Token)
+    ResourceRoute->>AuthMiddleware: protect()
+    AuthMiddleware->>AuthMiddleware: jwt.verify(token)
+    AuthMiddleware->>DB: User.findById()
+    DB-->>AuthMiddleware: Active User context
+    AuthMiddleware->>ResourceRoute: req.user = user
+    ResourceRoute-->>Client: 200 OK (Secured Data)
+```
+
+- **JWT `Bearer` tokens** — all protected routes require the `Authorization` header containing the valid token.
+- **Password encryption** — hashed with `bcryptjs` during registration and password changes; plaintext is never stored.
+- **Stateless `protect` middleware**: intercepts secure routes, parses and verifies the token signature, fetches the active user, and securely attaches it to the request object (`req.user`).
 
 ---
 
@@ -192,7 +229,31 @@ These are the hard problems solved in this project — the kind that don't show 
 
 **Problem:** Preventing two users from simultaneously editing the same node's text requires a "lock". Storing this in the database would be slow and require cleanup jobs.
 
-**Solution:** Edit locks are tracked **in-memory per room**. The `node-editing` event records `{ nodeId → { socketId, user } }` in a per-room map. `node-editing-stopped` and socket `disconnect` both release the lock. The client checks the lock state before rendering an editable input.
+**Solution:** Edit locks are tracked **in-memory per room**. The `node-editing` event records the user who claims the lock.
+
+```mermaid
+sequenceDiagram
+    actor UserA
+    actor UserB
+    participant Server as Socket.io Server
+    participant State as In-Memory State<br/>(roomPresence)
+    
+    UserA->>Server: emit `node-editing` (nodeId)
+    Server->>State: locks[nodeId] = UserA
+    Server-->>UserB: broadcast `node-editing`
+    Note over UserB: Client disables edit input<br/>shows "UserA is editing..."
+    
+    UserA->>Server: emit `node-editing-stopped`
+    Server->>State: delete locks[nodeId]
+    Server-->>UserB: broadcast `node-editing-stopped`
+    Note over UserB: Client re-enables edit input
+    
+    Note over UserA, State: Fallback Cleanup
+    UserA-->>Server: disconnects
+    Server->>State: Cleanup all locks owned by UserA
+```
+
+The server maintains a map per room (`{ nodeId → { socketId, user } }`). `node-editing-stopped` and socket `disconnect` both release the lock. The client checks the lock state before rendering an editable input, delivering conflict-free concurrent editing without database penalty.
 
 ---
 
@@ -391,6 +452,30 @@ src/
 ---
 
 ## 🗄️ Data Models
+
+### System Entity-Relationship Model (ERD)
+The following ER Diagram illustrates the relationships among all collections within the primary MongoDB database. It portrays a unified structure centered around `User` and `MindMap`.
+
+```mermaid
+erDiagram
+    User ||--o{ MindMap : "owns (userId)"
+    User ||--o{ MapMember : "is member of"
+    User ||--o{ ActivityLog : "performs"
+    User ||--o{ NodeComment : "writes"
+    User ||--o{ Version : "creates snapshot"
+    
+    MindMap ||--o{ Node : "contains"
+    MindMap ||--o{ MapMember : "has members"
+    MindMap ||--o{ ActivityLog : "logs events"
+    MindMap ||--o{ NodeComment : "has comments"
+    MindMap ||--o{ Version : "has snapshots"
+    MindMap ||--o{ ProcessedOperation : "has ops"
+
+    Node ||--o{ Node : "parent/child"
+    Node ||--o{ NodeComment : "has comments"
+    
+    Template ||--|{ Node : "acts as blueprint"
+```
 
 ### `User`
 | Field | Type | Constraints |
