@@ -18,21 +18,24 @@ const io = new Server(server, {
   },
 });
 
+const isProd = process.env.NODE_ENV === "production";
+const noop = (req, res, next) => next();
+
 app.set("io", io);
 app.use(cors());
 app.use(express.json());
-app.use(globalLimiter);
+app.use(isProd ? globalLimiter : noop);
 
 // Health check endpoint for Render
 app.get("/health", (req, res) => res.status(200).json({ status: "ok" }));
 
 const { protect } = require("./middleware/authMiddleware");
 
-app.use("/api/auth", authLimiter, require("./routes/authRoutes"));
+app.use("/api/auth", isProd ? authLimiter : noop, require("./routes/authRoutes"));
 app.use("/api/mindmaps", protect, require("./routes/mindmapRoutes"));
 app.use("/api", protect, require("./routes/versionRoutes"));
 app.use("/api/templates", require("./routes/templateRoutes"));
-app.use("/api/ai", aiLimiter, require("./routes/aiRoutes"));
+app.use("/api/ai", isProd ? aiLimiter : noop, require("./routes/aiRoutes"));
 
 // Initialize sockets
 initSocket(io);
