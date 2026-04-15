@@ -33,7 +33,7 @@
 |---|---|
 | 🌐 **Live App** | `https://your-app.vercel.app` |
 | 🔧 **API Base URL** | `https://your-api.railway.app/api` |
-| 📹 **Video Walkthrough** | `https://your-loom-or-youtube-link` |
+| 📹 **Video Walkthrough** | `https://drive.google.com/file/d/1jQwu18Q5VngjqHny4PnKimyoQaZbOAIf/view?usp=sharing` |
 
 <!-- 
   📸 SCREENSHOTS
